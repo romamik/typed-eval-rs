@@ -3,20 +3,65 @@ use crate::{
     expr_parser::parse_expr,
 };
 use std::{
-    any::{Any, TypeId},
+    any::{Any, TypeId, type_name},
     collections::HashMap,
+    hash::Hash,
     marker::PhantomData,
 };
 
 pub mod expr;
 pub mod expr_parser;
 
+#[derive(Clone, Copy)]
+pub struct TypeDescr {
+    type_id: TypeId,
+    type_name: &'static str,
+}
+
+impl TypeDescr {
+    pub fn of<T>() -> Self
+    where
+        T: 'static,
+    {
+        Self {
+            type_id: TypeId::of::<T>(),
+            type_name: type_name::<T>(),
+        }
+    }
+}
+
+impl PartialEq for TypeDescr {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_id == other.type_id
+    }
+}
+
+impl Eq for TypeDescr {}
+
+impl Hash for TypeDescr {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.type_id.hash(state);
+    }
+}
+
+impl std::fmt::Debug for TypeDescr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.type_name)
+    }
+}
+
+impl std::fmt::Display for TypeDescr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.type_name)
+    }
+}
+
 struct TypedFn<Arg, Ret>(Box<dyn Fn(&Arg) -> Ret>);
 
 pub struct CompiledExpr {
     dyn_fn: Box<dyn Any>,
-    arg_type: TypeId,
-    ret_type: TypeId,
+    arg_type: TypeDescr,
+    ret_type: TypeDescr,
 }
 
 impl CompiledExpr {
@@ -25,7 +70,7 @@ impl CompiledExpr {
         Arg: 'static,
         Ret: 'static,
     {
-        let (arg_type, ret_type) = (TypeId::of::<Arg>(), TypeId::of::<Ret>());
+        let (arg_type, ret_type) = (TypeDescr::of::<Arg>(), TypeDescr::of::<Ret>());
         if self.arg_type != arg_type || self.ret_type != ret_type {
             return Err(self);
         }
@@ -60,8 +105,8 @@ impl CompiledExpr {
     {
         Self {
             dyn_fn: Box::new(TypedFn(Box::new(f))),
-            arg_type: TypeId::of::<Arg>(),
-            ret_type: TypeId::of::<Ret>(),
+            arg_type: TypeDescr::of::<Arg>(),
+            ret_type: TypeDescr::of::<Ret>(),
         }
     }
 }
@@ -69,10 +114,12 @@ impl CompiledExpr {
 type CompilerResult<T> = Result<T, String>;
 
 struct Compiler<Arg> {
-    casts:
-        HashMap<(TypeId, TypeId), Box<dyn Fn(CompiledExpr) -> Result<CompiledExpr, CompiledExpr>>>,
+    casts: HashMap<
+        (TypeDescr, TypeDescr),
+        Box<dyn Fn(CompiledExpr) -> Result<CompiledExpr, CompiledExpr>>,
+    >,
     bin_ops: HashMap<
-        (TypeId, BinOp),
+        (TypeDescr, BinOp),
         Box<dyn Fn(CompiledExpr, CompiledExpr) -> CompilerResult<CompiledExpr>>,
     >,
     phantom_data: PhantomData<Arg>,
@@ -99,7 +146,7 @@ where
         To: 'static,
     {
         self.casts.insert(
-            (TypeId::of::<From>(), TypeId::of::<To>()),
+            (TypeDescr::of::<From>(), TypeDescr::of::<To>()),
             Box::new(move |from_expr| {
                 let from_fn = from_expr.downcast::<Arg, From>()?;
                 Ok(CompiledExpr::make(move |arg: &Arg| cast_fn(from_fn(arg))))
@@ -117,7 +164,7 @@ where
         T: 'static,
     {
         self.bin_ops.insert(
-            (TypeId::of::<T>(), bin_op),
+            (TypeDescr::of::<T>(), bin_op),
             Box::new(
                 move |lhs: CompiledExpr, rhs: CompiledExpr| -> CompilerResult<CompiledExpr> {
                     let lhs_fn = lhs.try_downcast::<Arg, T>()?;
@@ -136,14 +183,14 @@ where
         To: 'static,
     {
         let from_type = compiled_expr.ret_type;
-        let to_type = TypeId::of::<To>();
+        let to_type = TypeDescr::of::<To>();
         self.cast_to(to_type, compiled_expr)
             .map_err(|_| format!("Cannot cast {from_type:?} to {to_type:?}"))
     }
 
     fn cast_to(
         &self,
-        to: TypeId,
+        to: TypeDescr,
         compiled_expr: CompiledExpr,
     ) -> Result<CompiledExpr, CompiledExpr> {
         if compiled_expr.ret_type == to {
@@ -210,12 +257,12 @@ where
 }
 
 fn main() {
-    let src = "30.0 + 10"; //"300000000 + 4 *(2- x) / 7.5 ";
+    let src = "30e1 + 10"; //"300000000 + 4 *(2- x) / 7.5 ";
     let parsed = parse_expr(src).unwrap();
 
     let compiler = Compiler::<()>::new();
 
-    let compiled = compiler.compile::<f64>(&parsed).unwrap();
+    let compiled = compiler.compile::<i64>(&parsed).unwrap();
     let result = (compiled)(&());
     println!("{result:?}");
 }
