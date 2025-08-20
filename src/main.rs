@@ -4,7 +4,10 @@ use crate::{
     expr_parser::parse_expr,
     tdesc::TDesc,
 };
-use std::{collections::HashMap, marker::PhantomData};
+use std::{
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+};
 
 pub mod boxed_fn;
 pub mod expr;
@@ -50,18 +53,63 @@ impl CompiledExpr {
             ret_ref: false,
         }
     }
+
+    fn make_ret_ref<Arg, Ret>(f: impl Fn(&Arg) -> &Ret + 'static) -> Self
+    where
+        Arg: 'static,
+        Ret: 'static,
+    {
+        Self {
+            dyn_fn: DynBoxedFn::make_ret_ref(f),
+            arg_type: TDesc::of::<Arg>(),
+            ret_type: TDesc::of::<Ret>(),
+            ret_ref: true,
+        }
+    }
 }
 
-// returned CompiledExpr must have arg_type = Object
-type ObjectFields = HashMap<&'static str, CompiledExpr>;
+pub trait SupportedType: Sized + 'static {
+    // register type with compiler, call all these register_bin_op, register_field
+    fn register<Arg: SupportedType>(compiler: &mut Compiler<Arg>);
 
-pub trait Object: 'static {
-    fn fields() -> Option<ObjectFields>;
+    // create a CompiledExpr that takes Arg of type Obj and returns a field
+    // function always take a function that returns a reference to a field
+    // but can return CompiledExpr that returns either reference or a value
+    // for primitive types it should be value, as operators and casts only work with values
+    // for objects it should be reference to avoid cloning objects
+    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + 'static) -> CompiledExpr;
 }
 
-impl Object for () {
-    fn fields() -> Option<ObjectFields> {
-        None
+impl SupportedType for i64 {
+    fn register<Arg: SupportedType>(compiler: &mut Compiler<Arg>) {
+        compiler
+            .register_cast(|i: i64| i as f64)
+            .register_un_op(UnOp::Neg, |i: i64| -i)
+            .register_un_op(UnOp::Plus, |i: i64| i)
+            .register_bin_op(BinOp::Add, |a: i64, b| a + b)
+            .register_bin_op(BinOp::Sub, |a: i64, b| a - b)
+            .register_bin_op(BinOp::Mul, |a: i64, b| a * b)
+            .register_bin_op(BinOp::Div, |a: i64, b| a / b);
+    }
+
+    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + 'static) -> CompiledExpr {
+        CompiledExpr::make(move |obj: &Obj| *getter(obj))
+    }
+}
+
+impl SupportedType for f64 {
+    fn register<Arg: SupportedType>(compiler: &mut Compiler<Arg>) {
+        compiler
+            .register_un_op(UnOp::Neg, |i: f64| -i)
+            .register_un_op(UnOp::Plus, |i: f64| i)
+            .register_bin_op(BinOp::Add, |a: f64, b| a + b)
+            .register_bin_op(BinOp::Sub, |a: f64, b| a - b)
+            .register_bin_op(BinOp::Mul, |a: f64, b| a * b)
+            .register_bin_op(BinOp::Div, |a: f64, b| a / b);
+    }
+
+    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + 'static) -> CompiledExpr {
+        CompiledExpr::make(move |obj: &Obj| *getter(obj))
     }
 }
 
@@ -70,8 +118,10 @@ type CompilerResult<T> = Result<T, String>;
 type CastFn = Box<dyn Fn(&CompiledExpr) -> CompilerResult<CompiledExpr>>;
 type UnopFn = Box<dyn Fn(CompiledExpr) -> CompilerResult<CompiledExpr>>;
 type BinopFn = Box<dyn Fn(CompiledExpr, CompiledExpr) -> CompilerResult<CompiledExpr>>;
+type ObjectFields = HashMap<&'static str, CompiledExpr>;
 
 pub struct Compiler<Arg> {
+    registered_types: HashSet<TDesc>,
     casts: HashMap<(TDesc, TDesc), CastFn>,
     un_ops: HashMap<(TDesc, UnOp), UnopFn>,
     bin_ops: HashMap<(TDesc, BinOp), BinopFn>,
@@ -79,35 +129,36 @@ pub struct Compiler<Arg> {
     phantom_data: PhantomData<Arg>,
 }
 
-impl<Arg: Object> Compiler<Arg>
+impl<Arg> Compiler<Arg>
 where
-    Arg: 'static,
+    Arg: SupportedType,
 {
     pub fn new() -> Self {
-        Self {
+        let mut compiler = Self {
+            registered_types: HashSet::new(),
             casts: HashMap::new(),
             un_ops: HashMap::new(),
             bin_ops: HashMap::new(),
             objects: HashMap::new(),
             phantom_data: PhantomData,
-        }
-        .register_cast(|i: i64| i as f64)
-        .register_un_op(UnOp::Neg, |rhs: i64| -rhs)
-        .register_un_op(UnOp::Neg, |rhs: f64| -rhs)
-        .register_un_op(UnOp::Plus, |rhs: i64| rhs)
-        .register_un_op(UnOp::Plus, |rhs: f64| rhs)
-        .register_bin_op(BinOp::Add, |lhs: i64, rhs| lhs + rhs)
-        .register_bin_op(BinOp::Add, |lhs: f64, rhs| lhs + rhs)
-        .register_bin_op(BinOp::Sub, |lhs: i64, rhs| lhs - rhs)
-        .register_bin_op(BinOp::Sub, |lhs: f64, rhs| lhs - rhs)
-        .register_bin_op(BinOp::Mul, |lhs: i64, rhs| lhs * rhs)
-        .register_bin_op(BinOp::Mul, |lhs: f64, rhs| lhs * rhs)
-        .register_bin_op(BinOp::Div, |lhs: i64, rhs| lhs / rhs)
-        .register_bin_op(BinOp::Div, |lhs: f64, rhs| lhs / rhs)
-        .register_object::<Arg>()
+        };
+        compiler.register_type::<Arg>();
+        compiler
     }
 
-    fn register_cast<From, To>(mut self, cast_fn: impl Fn(From) -> To + Copy + 'static) -> Self
+    pub fn register_type<T: SupportedType + 'static>(&mut self) {
+        let ty = TDesc::of::<T>();
+        if self.registered_types.contains(&ty) {
+            return;
+        }
+        self.registered_types.insert(ty);
+        T::register(self);
+    }
+
+    pub fn register_cast<From, To>(
+        &mut self,
+        cast_fn: impl Fn(From) -> To + Copy + 'static,
+    ) -> &mut Self
     where
         From: 'static,
         To: 'static,
@@ -122,7 +173,11 @@ where
         self
     }
 
-    fn register_un_op<T>(mut self, un_op: UnOp, unop_fn: impl Fn(T) -> T + Copy + 'static) -> Self
+    pub fn register_un_op<T>(
+        &mut self,
+        un_op: UnOp,
+        unop_fn: impl Fn(T) -> T + Copy + 'static,
+    ) -> &mut Self
     where
         T: 'static,
     {
@@ -136,11 +191,11 @@ where
         self
     }
 
-    fn register_bin_op<T>(
-        mut self,
+    pub fn register_bin_op<T>(
+        &mut self,
         bin_op: BinOp,
         bin_op_fn: impl Fn(T, T) -> T + Copy + 'static,
-    ) -> Self
+    ) -> &mut Self
     where
         T: 'static,
     {
@@ -159,15 +214,22 @@ where
         self
     }
 
-    fn register_object<O: Object>(mut self) -> Self {
-        let ty = TDesc::of::<O>();
-        if self.objects.contains_key(&ty) {
-            return self;
-        }
-        let Some(fields) = O::fields() else {
-            return self;
-        };
-        self.objects.insert(ty, fields);
+    pub fn register_field<Obj, Field>(
+        &mut self,
+        name: &'static str,
+        getter: impl Fn(&Obj) -> &Field + 'static,
+    ) -> &mut Self
+    where
+        Obj: 'static,
+        Field: SupportedType,
+    {
+        self.register_type::<Field>();
+
+        let obj_type = TDesc::of::<Obj>();
+        self.objects
+            .entry(obj_type)
+            .or_default()
+            .insert(name, SupportedType::make_getter(getter));
         self
     }
 
@@ -265,9 +327,9 @@ where
     }
 }
 
-impl<Arg: Object> Default for Compiler<Arg>
+impl<Arg> Default for Compiler<Arg>
 where
-    Arg: 'static,
+    Arg: SupportedType,
 {
     fn default() -> Self {
         Self::new()
@@ -279,15 +341,32 @@ struct Foo {
     b: f64,
 }
 
-impl Object for Foo {
-    fn fields() -> Option<ObjectFields> {
-        Some(
-            [
-                ("a", CompiledExpr::make(|obj: &Foo| obj.a)),
-                ("b", CompiledExpr::make(|obj: &Foo| obj.b)),
-            ]
-            .into(),
-        )
+impl SupportedType for Foo {
+    fn register<Arg: SupportedType>(compiler: &mut Compiler<Arg>) {
+        compiler
+            .register_field("a", |obj: &Self| &obj.a)
+            .register_field("b", |obj: &Self| &obj.b);
+    }
+
+    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + 'static) -> CompiledExpr {
+        CompiledExpr::make_ret_ref(getter)
+    }
+}
+
+struct Bar {
+    c: i64,
+    foo: Foo,
+}
+
+impl SupportedType for Bar {
+    fn register<Arg: SupportedType>(compiler: &mut Compiler<Arg>) {
+        compiler
+            .register_field("c", |obj: &Self| &obj.c)
+            .register_field("foo", |obj: &Self| &obj.foo);
+    }
+
+    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + 'static) -> CompiledExpr {
+        CompiledExpr::make_ret_ref(getter)
     }
 }
 
@@ -296,7 +375,10 @@ fn main() {
     let parsed = parse_expr(src).unwrap();
     let compiler = Compiler::<Foo>::new();
     let compiled = compiler.compile::<f64>(&parsed).unwrap();
-    let ctx = Foo { a: 10, b: 20.5 };
-    let result = (compiled)(&ctx);
+    let ctx = Bar {
+        foo: Foo { a: 10, b: 20.5 },
+        c: 20,
+    };
+    let result = (compiled)(&ctx.foo);
     println!("{result:?}");
 }
