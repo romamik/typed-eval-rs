@@ -1,5 +1,5 @@
 use crate::{
-    boxed_fn::{BoxedFnRetVal, DynBoxedFn},
+    boxed_fn::{BoxedFnRetRef, BoxedFnRetVal, DynBoxedFn},
     expr::{BinOp, Expr, UnOp},
     expr_parser::parse_expr,
     tdesc::TDesc,
@@ -37,6 +37,24 @@ impl CompiledExpr {
         }
 
         let typed_fn = self.dyn_fn.downcast_ret_val::<Arg, Ret>().unwrap();
+
+        Ok(typed_fn)
+    }
+
+    fn downcast_ret_ref<Arg, Ret>(&self) -> CompilerResult<BoxedFnRetRef<Arg, Ret>>
+    where
+        Arg: 'static,
+        Ret: 'static,
+    {
+        let (arg_type, ret_type) = (TDesc::of::<Arg>(), TDesc::of::<Ret>());
+        if self.arg_type != arg_type || self.ret_type != ret_type || !self.ret_ref {
+            return Err(format!(
+                "Failed CompiledExpr downcast. Expected Arg:{:?} Ret:{:?} returns_ref:true. Got Arg:{:?}, Ret{:?} returns_ref:{:?}",
+                arg_type, ret_type, self.arg_type, self.ret_type, self.ret_ref
+            ));
+        }
+
+        let typed_fn = self.dyn_fn.downcast_ret_ref::<Arg, Ret>().unwrap();
 
         Ok(typed_fn)
     }
@@ -118,14 +136,14 @@ type CompilerResult<T> = Result<T, String>;
 type CastFn = Box<dyn Fn(&CompiledExpr) -> CompilerResult<CompiledExpr>>;
 type UnopFn = Box<dyn Fn(CompiledExpr) -> CompilerResult<CompiledExpr>>;
 type BinopFn = Box<dyn Fn(CompiledExpr, CompiledExpr) -> CompilerResult<CompiledExpr>>;
-type ObjectFields = HashMap<&'static str, CompiledExpr>;
+type FieldFn = Box<dyn Fn(CompiledExpr) -> CompilerResult<CompiledExpr>>;
 
 pub struct Compiler<Arg> {
     registered_types: HashSet<TDesc>,
     casts: HashMap<(TDesc, TDesc), CastFn>,
     un_ops: HashMap<(TDesc, UnOp), UnopFn>,
     bin_ops: HashMap<(TDesc, BinOp), BinopFn>,
-    objects: HashMap<TDesc, ObjectFields>,
+    fields: HashMap<(TDesc, &'static str), FieldFn>,
     phantom_data: PhantomData<Arg>,
 }
 
@@ -139,7 +157,7 @@ where
             casts: HashMap::new(),
             un_ops: HashMap::new(),
             bin_ops: HashMap::new(),
-            objects: HashMap::new(),
+            fields: HashMap::new(),
             phantom_data: PhantomData,
         };
         compiler.register_type::<Arg>();
@@ -216,8 +234,8 @@ where
 
     pub fn register_field<Obj, Field>(
         &mut self,
-        name: &'static str,
-        getter: impl Fn(&Obj) -> &Field + 'static,
+        field_name: &'static str,
+        getter: impl Fn(&Obj) -> &Field + Copy + 'static,
     ) -> &mut Self
     where
         Obj: 'static,
@@ -226,10 +244,13 @@ where
         self.register_type::<Field>();
 
         let obj_type = TDesc::of::<Obj>();
-        self.objects
-            .entry(obj_type)
-            .or_default()
-            .insert(name, SupportedType::make_getter(getter));
+        self.fields.insert(
+            (obj_type, field_name),
+            Box::new(move |obj: CompiledExpr| -> CompilerResult<CompiledExpr> {
+                let obj_fn = obj.downcast_ret_ref::<Arg, Obj>()?;
+                Ok(Field::make_getter(move |arg: &Arg| getter(obj_fn(arg))))
+            }),
+        );
         self
     }
 
@@ -282,14 +303,10 @@ where
 
             Expr::Var(name) => {
                 let arg_type = TDesc::of::<Arg>();
-                let Some(field_getter) = self
-                    .objects
-                    .get(&arg_type)
-                    .and_then(|fields| fields.get(name.as_str()))
-                else {
+                let Some(field_fn) = self.fields.get(&(arg_type, name)) else {
                     return Err(format!("No field {name} on type {arg_type}"));
                 };
-                field_getter.clone()
+                field_fn(CompiledExpr::make_ret_ref(|arg: &Arg| arg))?
             }
 
             Expr::UnOp(op, rhs) => {
@@ -314,6 +331,19 @@ where
                     ));
                 };
                 bin_op_fn(lhs, rhs)?
+            }
+
+            Expr::FieldAccess(obj, field_name) => {
+                let obj = self.compile_typed(obj)?;
+                let obj_type = obj.ret_type;
+                if !obj.ret_ref {
+                    return Err("Invalid field access: need reference type".to_string());
+                }
+                let Some(field_fn) = self.fields.get(&(obj_type, field_name)) else {
+                    return Err(format!("No field {field_name} on type {obj_type}"));
+                };
+
+                field_fn(obj)?
             }
         })
     }
@@ -371,14 +401,14 @@ impl SupportedType for Bar {
 }
 
 fn main() {
-    let src = "-+-(30+10 * +a) / -b";
+    let src = "  (foo.a*foo.b - c) * +-+-2.0 / --2 ";
     let parsed = parse_expr(src).unwrap();
-    let compiler = Compiler::<Foo>::new();
+    let compiler = Compiler::<Bar>::new();
     let compiled = compiler.compile::<f64>(&parsed).unwrap();
     let ctx = Bar {
         foo: Foo { a: 10, b: 20.5 },
         c: 20,
     };
-    let result = (compiled)(&ctx.foo);
+    let result = (compiled)(&ctx);
     println!("{result:?}");
 }

@@ -53,11 +53,16 @@ fn expr_parser<'src>() -> impl Parser<'src, &'src str, Expr, extra::Err<Rich<'sr
 
         let atom = choice((num, var, parens)).padded();
 
+        let field_access = atom.clone().foldl(
+            just('.').ignore_then(text::ident()).repeated(),
+            |lhs, field: &str| Expr::FieldAccess(Box::new(lhs), field.to_string()),
+        );
+
         let unary = one_of("+-")
             .padded()
             .map(|c| UnOp::from_char(c).unwrap())
             .repeated()
-            .foldr(atom, |op, rhs| Expr::UnOp(op, Box::new(rhs)));
+            .foldr(field_access, |op, rhs| Expr::UnOp(op, Box::new(rhs)));
 
         let product = unary.clone().foldl(
             one_of("*/")
