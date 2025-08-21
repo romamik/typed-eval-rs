@@ -1,12 +1,12 @@
 use crate::{
     boxed_fn::DynBoxedFn,
-    compiler::Compiler,
+    compiler::CompilerInner,
     expr::{BinOp, UnOp},
 };
 
 pub trait SupportedType: Sized + 'static {
     // register type with compiler, call all these register_bin_op, register_field
-    fn register<Arg: SupportedType>(compiler: &mut Compiler<Arg>);
+    fn register<Arg: SupportedType>(compiler: &mut CompilerInner<Arg>);
 
     // create a DynBoxedFn that takes Arg of type Obj and returns a field
     // function always take a function that returns a reference to a field
@@ -16,8 +16,21 @@ pub trait SupportedType: Sized + 'static {
     fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + Clone + 'static) -> DynBoxedFn;
 }
 
+pub fn register_basic_types<Arg: SupportedType + 'static>(compiler: &mut CompilerInner<Arg>) {
+    compiler.register_type::<i64>();
+    compiler.register_type::<f64>();
+}
+
+impl SupportedType for () {
+    fn register<Arg: SupportedType>(_compiler: &mut CompilerInner<Arg>) {}
+
+    fn make_getter<Obj: 'static>(_getter: impl Fn(&Obj) -> &Self + Clone + 'static) -> DynBoxedFn {
+        DynBoxedFn::make_ret_val(move |_obj: &Obj| ())
+    }
+}
+
 impl SupportedType for i64 {
-    fn register<Arg: SupportedType>(compiler: &mut Compiler<Arg>) {
+    fn register<Arg: SupportedType>(compiler: &mut CompilerInner<Arg>) {
         compiler
             .register_cast(|i: i64| i as f64)
             .register_un_op(UnOp::Neg, |i: i64| -i)
@@ -34,7 +47,7 @@ impl SupportedType for i64 {
 }
 
 impl SupportedType for f64 {
-    fn register<Arg: SupportedType>(compiler: &mut Compiler<Arg>) {
+    fn register<Arg: SupportedType>(compiler: &mut CompilerInner<Arg>) {
         compiler
             .register_un_op(UnOp::Neg, |i: f64| -i)
             .register_un_op(UnOp::Plus, |i: f64| i)

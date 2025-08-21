@@ -1,5 +1,7 @@
 use crate::{
-    boxed_fn::DynBoxedFn, compiler::Compiler, expr_parser::parse_expr,
+    boxed_fn::DynBoxedFn,
+    compiler::{Compiler, CompilerInner},
+    expr_parser::parse_expr,
     supported_type::SupportedType,
 };
 
@@ -16,7 +18,7 @@ struct Foo {
 }
 
 impl SupportedType for Foo {
-    fn register<Arg: SupportedType>(compiler: &mut Compiler<Arg>) {
+    fn register<Arg: SupportedType>(compiler: &mut CompilerInner<Arg>) {
         compiler
             .register_field("a", |obj: &Self| &obj.a)
             .register_field("b", |obj: &Self| &obj.b);
@@ -33,7 +35,7 @@ struct Bar {
 }
 
 impl SupportedType for Bar {
-    fn register<Arg: SupportedType>(compiler: &mut Compiler<Arg>) {
+    fn register<Arg: SupportedType>(compiler: &mut CompilerInner<Arg>) {
         compiler
             .register_field("c", |obj: &Self| &obj.c)
             .register_field("foo", |obj: &Self| &obj.foo);
