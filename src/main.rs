@@ -1,5 +1,5 @@
 use crate::{
-    boxed_fn::{BoxedFnRetRef, BoxedFnRetVal, DynBoxedFn},
+    boxed_fn::{BoxedFnRetVal, DynBoxedFn},
     expr::{BinOp, Expr, UnOp},
     expr_parser::parse_expr,
     tdesc::TDesc,
@@ -14,88 +14,16 @@ pub mod expr;
 pub mod expr_parser;
 pub mod tdesc;
 
-#[derive(Clone)]
-pub struct CompiledExpr {
-    dyn_fn: DynBoxedFn,
-    arg_type: TDesc,
-    ret_type: TDesc,
-    ret_ref: bool,
-}
-
-impl CompiledExpr {
-    fn downcast<Arg, Ret>(&self) -> CompilerResult<BoxedFnRetVal<Arg, Ret>>
-    where
-        Arg: 'static,
-        Ret: 'static,
-    {
-        let (arg_type, ret_type) = (TDesc::of::<Arg>(), TDesc::of::<Ret>());
-        if self.arg_type != arg_type || self.ret_type != ret_type || self.ret_ref {
-            return Err(format!(
-                "Failed CompiledExpr downcast. Expected Arg:{:?} Ret:{:?} returns_ref:false. Got Arg:{:?}, Ret{:?} returns_ref:{:?}",
-                arg_type, ret_type, self.arg_type, self.ret_type, self.ret_ref
-            ));
-        }
-
-        let typed_fn = self.dyn_fn.downcast_ret_val::<Arg, Ret>().unwrap();
-
-        Ok(typed_fn)
-    }
-
-    fn downcast_ret_ref<Arg, Ret>(&self) -> CompilerResult<BoxedFnRetRef<Arg, Ret>>
-    where
-        Arg: 'static,
-        Ret: 'static,
-    {
-        let (arg_type, ret_type) = (TDesc::of::<Arg>(), TDesc::of::<Ret>());
-        if self.arg_type != arg_type || self.ret_type != ret_type || !self.ret_ref {
-            return Err(format!(
-                "Failed CompiledExpr downcast. Expected Arg:{:?} Ret:{:?} returns_ref:true. Got Arg:{:?}, Ret{:?} returns_ref:{:?}",
-                arg_type, ret_type, self.arg_type, self.ret_type, self.ret_ref
-            ));
-        }
-
-        let typed_fn = self.dyn_fn.downcast_ret_ref::<Arg, Ret>().unwrap();
-
-        Ok(typed_fn)
-    }
-
-    fn make<Arg, Ret>(f: impl Fn(&Arg) -> Ret + 'static) -> Self
-    where
-        Arg: 'static,
-        Ret: 'static,
-    {
-        Self {
-            dyn_fn: DynBoxedFn::make_ret_val(f),
-            arg_type: TDesc::of::<Arg>(),
-            ret_type: TDesc::of::<Ret>(),
-            ret_ref: false,
-        }
-    }
-
-    fn make_ret_ref<Arg, Ret>(f: impl Fn(&Arg) -> &Ret + 'static) -> Self
-    where
-        Arg: 'static,
-        Ret: 'static,
-    {
-        Self {
-            dyn_fn: DynBoxedFn::make_ret_ref(f),
-            arg_type: TDesc::of::<Arg>(),
-            ret_type: TDesc::of::<Ret>(),
-            ret_ref: true,
-        }
-    }
-}
-
 pub trait SupportedType: Sized + 'static {
     // register type with compiler, call all these register_bin_op, register_field
     fn register<Arg: SupportedType>(compiler: &mut Compiler<Arg>);
 
-    // create a CompiledExpr that takes Arg of type Obj and returns a field
+    // create a DynBoxedFn that takes Arg of type Obj and returns a field
     // function always take a function that returns a reference to a field
-    // but can return CompiledExpr that returns either reference or a value
+    // but can return DynBoxedFn that returns either reference or a value
     // for primitive types it should be value, as operators and casts only work with values
-    // for objects it should be reference to avoid cloning objects
-    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + 'static) -> CompiledExpr;
+    // for objects it should be reference
+    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + Clone + 'static) -> DynBoxedFn;
 }
 
 impl SupportedType for i64 {
@@ -110,8 +38,8 @@ impl SupportedType for i64 {
             .register_bin_op(BinOp::Div, |a: i64, b| a / b);
     }
 
-    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + 'static) -> CompiledExpr {
-        CompiledExpr::make(move |obj: &Obj| *getter(obj))
+    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + Clone + 'static) -> DynBoxedFn {
+        DynBoxedFn::make_ret_val(move |obj: &Obj| *getter(obj))
     }
 }
 
@@ -126,17 +54,17 @@ impl SupportedType for f64 {
             .register_bin_op(BinOp::Div, |a: f64, b| a / b);
     }
 
-    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + 'static) -> CompiledExpr {
-        CompiledExpr::make(move |obj: &Obj| *getter(obj))
+    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + Clone + 'static) -> DynBoxedFn {
+        DynBoxedFn::make_ret_val(move |obj: &Obj| *getter(obj))
     }
 }
 
 type CompilerResult<T> = Result<T, String>;
 
-type CastFn = Box<dyn Fn(&CompiledExpr) -> CompilerResult<CompiledExpr>>;
-type UnopFn = Box<dyn Fn(CompiledExpr) -> CompilerResult<CompiledExpr>>;
-type BinopFn = Box<dyn Fn(CompiledExpr, CompiledExpr) -> CompilerResult<CompiledExpr>>;
-type FieldFn = Box<dyn Fn(CompiledExpr) -> CompilerResult<CompiledExpr>>;
+type CastFn = Box<dyn Fn(&DynBoxedFn) -> Option<DynBoxedFn>>;
+type UnopFn = Box<dyn Fn(DynBoxedFn) -> CompilerResult<DynBoxedFn>>;
+type BinopFn = Box<dyn Fn(DynBoxedFn, DynBoxedFn) -> CompilerResult<DynBoxedFn>>;
+type FieldFn = Box<dyn Fn(DynBoxedFn) -> CompilerResult<DynBoxedFn>>;
 
 pub struct Compiler<Arg> {
     registered_types: HashSet<TDesc>,
@@ -164,6 +92,7 @@ where
         compiler
     }
 
+    // check if T is registered and call T::register if not
     pub fn register_type<T: SupportedType + 'static>(&mut self) {
         let ty = TDesc::of::<T>();
         if self.registered_types.contains(&ty) {
@@ -173,6 +102,7 @@ where
         T::register(self);
     }
 
+    // register a cast, should be called from SupportedType::register
     pub fn register_cast<From, To>(
         &mut self,
         cast_fn: impl Fn(From) -> To + Copy + 'static,
@@ -183,14 +113,20 @@ where
     {
         self.casts.insert(
             (TDesc::of::<From>(), TDesc::of::<To>()),
-            Box::new(move |from_expr| {
-                let from_fn = from_expr.downcast::<Arg, From>()?;
-                Ok(CompiledExpr::make(move |arg: &Arg| cast_fn(from_fn(arg))))
+            Box::new(move |from| {
+                // this function takes function Fn(Arg)->From and return function Fn(Arg)->To
+
+                let from_fn = from.get_fn_ret_val::<Arg, From>().ok()?;
+
+                Some(DynBoxedFn::make_ret_val(move |arg: &Arg| {
+                    cast_fn(from_fn.call(arg))
+                }))
             }),
         );
         self
     }
 
+    // register unary operator, should be called from SupportedType::register
     pub fn register_un_op<T>(
         &mut self,
         un_op: UnOp,
@@ -201,14 +137,21 @@ where
     {
         self.un_ops.insert(
             (TDesc::of::<T>(), un_op),
-            Box::new(move |from_expr| {
-                let from_fn = from_expr.downcast::<Arg, T>()?;
-                Ok(CompiledExpr::make(move |arg: &Arg| unop_fn(from_fn(arg))))
+            Box::new(move |rhs| {
+                // this function takes takes and returns functions Fn(Arg)->T
+                // returned function applies unary operation to result of the rhs function
+
+                let rhs_expr = rhs.get_fn_ret_val::<Arg, T>()?;
+
+                Ok(DynBoxedFn::make_ret_val(move |arg: &Arg| {
+                    unop_fn(rhs_expr.call(arg))
+                }))
             }),
         );
         self
     }
 
+    // register binary operator, should be called from SupportedType::register
     pub fn register_bin_op<T>(
         &mut self,
         bin_op: BinOp,
@@ -220,11 +163,16 @@ where
         self.bin_ops.insert(
             (TDesc::of::<T>(), bin_op),
             Box::new(
-                move |lhs: CompiledExpr, rhs: CompiledExpr| -> CompilerResult<CompiledExpr> {
-                    let lhs_fn = lhs.downcast::<Arg, T>()?;
-                    let rhs_fn = rhs.downcast::<Arg, T>()?;
-                    Ok(CompiledExpr::make(move |arg: &Arg| {
-                        bin_op_fn(lhs_fn(arg), rhs_fn(arg))
+                move |lhs: DynBoxedFn, rhs: DynBoxedFn| -> CompilerResult<DynBoxedFn> {
+                    // this function takes rhs and lhs function of type Fn(Arg)->T
+                    // return function Fn(Arg)->T which returns the result of the binary operation
+
+                    let lhs_fn = lhs.get_fn_ret_val::<Arg, T>()?;
+
+                    let rhs_fn = rhs.get_fn_ret_val::<Arg, T>()?;
+
+                    Ok(DynBoxedFn::make_ret_val(move |arg: &Arg| {
+                        bin_op_fn(lhs_fn.call(arg), rhs_fn.call(arg))
                     }))
                 },
             ),
@@ -232,6 +180,7 @@ where
         self
     }
 
+    // register field access, should be called from SupportedType::register
     pub fn register_field<Obj, Field>(
         &mut self,
         field_name: &'static str,
@@ -246,48 +195,66 @@ where
         let obj_type = TDesc::of::<Obj>();
         self.fields.insert(
             (obj_type, field_name),
-            Box::new(move |obj: CompiledExpr| -> CompilerResult<CompiledExpr> {
-                let obj_fn = obj.downcast_ret_ref::<Arg, Obj>()?;
-                Ok(Field::make_getter(move |arg: &Arg| getter(obj_fn(arg))))
+            Box::new(move |obj: DynBoxedFn| -> CompilerResult<DynBoxedFn> {
+                // this function takes function of type Fn(Arg)->Obj
+                // and returns function of type Fn(Arg)->Field
+
+                let obj_fn = obj.get_fn_ret_ref::<Arg, Obj>()?;
+
+                Ok(Field::make_getter(move |arg: &Arg| {
+                    getter(obj_fn.call(arg))
+                }))
             }),
         );
         self
     }
 
-    fn cast<To>(&self, compiled_expr: CompiledExpr) -> CompilerResult<CompiledExpr>
+    // try cast expression so that it returns type To
+    fn cast<To>(&self, from: DynBoxedFn) -> CompilerResult<DynBoxedFn>
     where
         To: 'static,
     {
-        self.cast_to(TDesc::of::<To>(), compiled_expr)
+        let from_type = from.ret_type;
+        let to_type = TDesc::of::<To>();
+        self.cast_to(TDesc::of::<To>(), from)
+            .map_err(|_| format!("Cannot cast {from_type} to {to_type}"))
     }
 
-    fn cast_to(&self, to_type: TDesc, compiled_expr: CompiledExpr) -> CompilerResult<CompiledExpr> {
-        let from_type = compiled_expr.ret_type;
-        if compiled_expr.ret_type == to_type {
-            return Ok(compiled_expr.clone());
+    // try cast expression so that it returns type to_type
+    fn cast_to(&self, to_type: TDesc, from: DynBoxedFn) -> Result<DynBoxedFn, DynBoxedFn> {
+        // if types are the same just return from unchanged
+        if from.ret_type == to_type {
+            return Ok(from);
         }
-        let Some(cast_fn) = self.casts.get(&(compiled_expr.ret_type, to_type)) else {
-            return Err(format!("Cannot cast {from_type:?} to {to_type:?}"));
+
+        // lookup cast in registered casts
+        let Some(cast_fn) = self.casts.get(&(from.ret_type, to_type)) else {
+            return Err(from);
         };
-        cast_fn(&compiled_expr)
+
+        // cast_fn takes Fn(Arg)->From and return Fn(Arg)->To
+        cast_fn(&from).ok_or(from)
     }
 
+    // attempt to make two expressions be of the same type by casting either of them
     fn cast_same_type(
         &self,
-        a: CompiledExpr,
-        b: CompiledExpr,
-    ) -> CompilerResult<(CompiledExpr, CompiledExpr)> {
+        a: DynBoxedFn,
+        b: DynBoxedFn,
+    ) -> CompilerResult<(DynBoxedFn, DynBoxedFn)> {
         if a.ret_type == b.ret_type {
             return Ok((a, b));
         }
 
-        if let Ok(b_casted) = self.cast_to(a.ret_type, b.clone()) {
-            return Ok((a, b_casted));
-        }
+        let b = match self.cast_to(a.ret_type, b) {
+            Ok(b_casted) => return Ok((a, b_casted)),
+            Err(b_failed) => b_failed,
+        };
 
-        if let Ok(a_casted) = self.cast_to(b.ret_type, a.clone()) {
-            return Ok((a_casted, b));
-        }
+        let a = match self.cast_to(b.ret_type, a) {
+            Ok(a_casted) => return Ok((a_casted, b)),
+            Err(a_failed) => a_failed,
+        };
 
         Err(format!(
             "Cannot cast to same type {:?} and {:?}",
@@ -295,18 +262,31 @@ where
         ))
     }
 
-    pub fn compile_typed(&self, expr: &Expr) -> CompilerResult<CompiledExpr> {
-        Ok(match expr {
-            &Expr::Int(val) => CompiledExpr::make(move |_: &Arg| val),
+    fn compile_field_access(
+        &self,
+        obj: DynBoxedFn,
+        field_name: &str,
+    ) -> CompilerResult<DynBoxedFn> {
+        let obj_type = obj.ret_type;
+        if !obj.ret_ref {
+            return Err("Invalid field access: need reference type".to_string());
+        }
+        let Some(field_fn) = self.fields.get(&(obj_type, field_name)) else {
+            return Err(format!("No field {field_name} on type {obj_type}"));
+        };
 
-            &Expr::Float(val) => CompiledExpr::make(move |_: &Arg| val),
+        field_fn(obj)
+    }
+
+    // compile AST to DynBoxedFn, the return type is determined from expression
+    pub fn compile_typed(&self, expr: &Expr) -> CompilerResult<DynBoxedFn> {
+        Ok(match expr {
+            &Expr::Int(val) => DynBoxedFn::make_ret_val(move |_: &Arg| val),
+
+            &Expr::Float(val) => DynBoxedFn::make_ret_val(move |_: &Arg| val),
 
             Expr::Var(name) => {
-                let arg_type = TDesc::of::<Arg>();
-                let Some(field_fn) = self.fields.get(&(arg_type, name)) else {
-                    return Err(format!("No field {name} on type {arg_type}"));
-                };
-                field_fn(CompiledExpr::make_ret_ref(|arg: &Arg| arg))?
+                self.compile_field_access(DynBoxedFn::make_ret_ref(|arg: &Arg| arg), name)?
             }
 
             Expr::UnOp(op, rhs) => {
@@ -335,25 +315,20 @@ where
 
             Expr::FieldAccess(obj, field_name) => {
                 let obj = self.compile_typed(obj)?;
-                let obj_type = obj.ret_type;
-                if !obj.ret_ref {
-                    return Err("Invalid field access: need reference type".to_string());
-                }
-                let Some(field_fn) = self.fields.get(&(obj_type, field_name)) else {
-                    return Err(format!("No field {field_name} on type {obj_type}"));
-                };
-
-                field_fn(obj)?
+                self.compile_field_access(obj, field_name)?
             }
         })
     }
 
+    // compile AST to a function with a known return type
+    // can result in cast error if expression resolves to incompatible type
     pub fn compile<Ret>(&self, expr: &Expr) -> CompilerResult<BoxedFnRetVal<Arg, Ret>>
     where
         Ret: 'static,
     {
         let compiled_expr = self.compile_typed(expr)?;
-        self.cast::<Ret>(compiled_expr)?.downcast()
+        let casted_fn = self.cast::<Ret>(compiled_expr)?.get_fn_ret_val()?;
+        Ok(casted_fn)
     }
 }
 
@@ -378,8 +353,8 @@ impl SupportedType for Foo {
             .register_field("b", |obj: &Self| &obj.b);
     }
 
-    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + 'static) -> CompiledExpr {
-        CompiledExpr::make_ret_ref(getter)
+    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + Clone + 'static) -> DynBoxedFn {
+        DynBoxedFn::make_ret_ref(getter)
     }
 }
 
@@ -395,8 +370,8 @@ impl SupportedType for Bar {
             .register_field("foo", |obj: &Self| &obj.foo);
     }
 
-    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + 'static) -> CompiledExpr {
-        CompiledExpr::make_ret_ref(getter)
+    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + Clone + 'static) -> DynBoxedFn {
+        DynBoxedFn::make_ret_ref(getter)
     }
 }
 
@@ -409,6 +384,6 @@ fn main() {
         foo: Foo { a: 10, b: 20.5 },
         c: 20,
     };
-    let result = (compiled)(&ctx);
+    let result = compiled.call(&ctx);
     println!("{result:?}");
 }
