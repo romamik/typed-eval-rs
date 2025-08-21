@@ -238,9 +238,13 @@ mod tests {
         let dyn_boxed_fn = DynBoxedFn::make_ret_val(|hello: &i32| *hello);
         let f = dyn_boxed_fn.get_fn_ret_val::<i32, i32>().unwrap();
         assert_eq!(data, f.call(&data));
+        assert!(dyn_boxed_fn.get_fn_ret_ref::<i32, i32>().is_err());
+        assert!(dyn_boxed_fn.get_fn_ret_ref::<i32, f32>().is_err());
 
         let dyn_boxed_fn = DynBoxedFn::make_ret_ref(|hello: &i32| hello);
         let f = dyn_boxed_fn.get_fn_ret_ref::<i32, i32>().unwrap();
         assert_eq!(data, *f.call(&data));
+        assert!(dyn_boxed_fn.get_fn_ret_val::<i32, i32>().is_err());
+        assert!(dyn_boxed_fn.get_fn_ret_val::<i32, f32>().is_err());
     }
 }

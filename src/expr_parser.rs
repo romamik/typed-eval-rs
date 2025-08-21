@@ -86,3 +86,100 @@ fn expr_parser<'src>() -> impl Parser<'src, &'src str, Expr, extra::Err<Rich<'sr
         sum
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::expr::{BinOp, Expr, UnOp};
+
+    fn parse_ok(input: &str) -> Expr {
+        let result = parse_expr(input);
+        if result.has_errors() {
+            for e in result.errors() {
+                eprintln!("Parse error: {e:?}");
+            }
+            panic!("Failed to parse input: {}", input);
+        }
+        result.into_output().unwrap()
+    }
+
+    #[test]
+    fn test_parse_integers_and_floats() {
+        assert_eq!(parse_ok("42"), Expr::Int(42));
+        assert_eq!(parse_ok("0"), Expr::Int(0));
+        assert_eq!(parse_ok("1.1415"), Expr::Float(1.1415));
+        assert_eq!(parse_ok("2e3"), Expr::Float(2000.0));
+        assert_eq!(parse_ok("2e-3"), Expr::Float(2e-3));
+    }
+
+    #[test]
+    fn test_parse_variables() {
+        assert_eq!(parse_ok("x"), Expr::Var("x".to_string()));
+        assert_eq!(parse_ok("foo123"), Expr::Var("foo123".to_string()));
+    }
+
+    #[test]
+    fn test_parse_parentheses() {
+        let expr = parse_ok("(42)");
+        assert_eq!(expr, Expr::Int(42));
+
+        let expr2 = parse_ok("((3.5))");
+        assert_eq!(expr2, Expr::Float(3.5));
+    }
+
+    #[test]
+    fn test_parse_unary_operators() {
+        let expr = parse_ok("-42");
+        assert_eq!(expr, Expr::UnOp(UnOp::Neg, Box::new(Expr::Int(42))));
+
+        let expr2 = parse_ok("+3.5");
+        assert_eq!(expr2, Expr::UnOp(UnOp::Plus, Box::new(Expr::Float(3.5))));
+
+        let expr3 = parse_ok("+-3.5");
+        assert_eq!(
+            expr3,
+            Expr::UnOp(
+                UnOp::Plus,
+                Box::new(Expr::UnOp(UnOp::Neg, Box::new(Expr::Float(3.5))))
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_binary_operators() {
+        let expr = parse_ok("1 + 2");
+        assert_eq!(
+            expr,
+            Expr::BinOp(BinOp::Add, Box::new(Expr::Int(1)), Box::new(Expr::Int(2)),)
+        );
+
+        let expr2 = parse_ok("3 * 4 + 5");
+        assert_eq!(
+            expr2,
+            Expr::BinOp(
+                BinOp::Add,
+                Box::new(Expr::BinOp(
+                    BinOp::Mul,
+                    Box::new(Expr::Int(3)),
+                    Box::new(Expr::Int(4))
+                )),
+                Box::new(Expr::Int(5))
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_field_access() {
+        let expr = parse_ok("foo.bar.baz");
+        assert_eq!(
+            expr,
+            Expr::FieldAccess(
+                Box::new(Expr::FieldAccess(
+                    Box::new(Expr::Var("foo".to_string())),
+                    "bar".to_string()
+                )),
+                "baz".to_string()
+            )
+        );
+    }
+}
