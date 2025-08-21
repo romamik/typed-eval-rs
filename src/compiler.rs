@@ -1,5 +1,5 @@
 use crate::{
-    boxed_fn::{BoxedFnRetVal, DynBoxedFn},
+    boxed_fn::{BoxedFnRetVal, DynBoxedFn, RetType},
     expr::{BinOp, Expr, UnOp},
     supported_type::{SupportedType, register_basic_types},
     tdesc::TDesc,
@@ -15,10 +15,10 @@ pub struct Compiler<Arg> {
 
 pub struct CompilerInner<Arg> {
     registered_types: HashSet<TDesc>,
-    casts: HashMap<(TDesc, TDesc), CastFn>,
-    un_ops: HashMap<(TDesc, UnOp), UnopFn>,
-    bin_ops: HashMap<(TDesc, BinOp), BinopFn>,
-    fields: HashMap<(TDesc, &'static str), FieldFn>,
+    casts: HashMap<(RetType, RetType), CastFn>,
+    un_ops: HashMap<(RetType, UnOp), UnopFn>,
+    bin_ops: HashMap<(RetType, BinOp), BinopFn>,
+    fields: HashMap<(RetType, &'static str), FieldFn>,
     phantom_data: PhantomData<Arg>,
 }
 
@@ -106,9 +106,6 @@ where
         field_name: &str,
     ) -> CompilerResult<DynBoxedFn> {
         let obj_type = obj.ret_type;
-        if !obj.ret_ref {
-            return Err("Invalid field access: need reference type".to_string());
-        }
         let Some(field_fn) = self.inner.fields.get(&(obj_type, field_name)) else {
             return Err(format!("No field {field_name} on type {obj_type}"));
         };
@@ -123,12 +120,12 @@ where
     {
         let from_type = from.ret_type;
         let to_type = TDesc::of::<To>();
-        self.cast_to(TDesc::of::<To>(), from)
+        self.cast_to(RetType::of_val::<To>(), from)
             .map_err(|_| format!("Cannot cast {from_type} to {to_type}"))
     }
 
     // try cast expression so that it returns type to_type
-    fn cast_to(&self, to_type: TDesc, from: DynBoxedFn) -> Result<DynBoxedFn, DynBoxedFn> {
+    fn cast_to(&self, to_type: RetType, from: DynBoxedFn) -> Result<DynBoxedFn, DynBoxedFn> {
         // if types are the same just return from unchanged
         if from.ret_type == to_type {
             return Ok(from);
@@ -203,7 +200,7 @@ where
         To: 'static,
     {
         self.casts.insert(
-            (TDesc::of::<From>(), TDesc::of::<To>()),
+            (RetType::of_val::<From>(), RetType::of_val::<To>()),
             Box::new(move |from| {
                 // this function takes function Fn(Arg)->From and return function Fn(Arg)->To
 
@@ -227,7 +224,7 @@ where
         T: 'static,
     {
         self.un_ops.insert(
-            (TDesc::of::<T>(), un_op),
+            (RetType::of_val::<T>(), un_op),
             Box::new(move |rhs| {
                 // this function takes takes and returns functions Fn(Arg)->T
                 // returned function applies unary operation to result of the rhs function
@@ -252,7 +249,7 @@ where
         T: 'static,
     {
         self.bin_ops.insert(
-            (TDesc::of::<T>(), bin_op),
+            (RetType::of_val::<T>(), bin_op),
             Box::new(
                 move |lhs: DynBoxedFn, rhs: DynBoxedFn| -> CompilerResult<DynBoxedFn> {
                     // this function takes rhs and lhs function of type Fn(Arg)->T
@@ -283,7 +280,7 @@ where
     {
         self.register_type::<Field>();
 
-        let obj_type = TDesc::of::<Obj>();
+        let obj_type = RetType::of_ref::<Obj>();
         self.fields.insert(
             (obj_type, field_name),
             Box::new(move |obj: DynBoxedFn| -> CompilerResult<DynBoxedFn> {

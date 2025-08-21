@@ -6,8 +6,7 @@ use std::any::Any;
 pub struct DynBoxedFn {
     boxed_fn: Box<dyn Any>,
     pub arg_type: TDesc,
-    pub ret_type: TDesc,
-    pub ret_ref: bool,
+    pub ret_type: RetType,
 }
 
 impl DynBoxedFn {
@@ -19,8 +18,7 @@ impl DynBoxedFn {
         Self {
             boxed_fn: Box::new(BoxedFn::RetVal(BoxedFnRetVal::new(f))),
             arg_type: TDesc::of::<Arg>(),
-            ret_type: TDesc::of::<Ret>(),
-            ret_ref: false,
+            ret_type: RetType::of_val::<Ret>(),
         }
     }
 
@@ -32,8 +30,7 @@ impl DynBoxedFn {
         Self {
             boxed_fn: Box::new(BoxedFn::RetRef(BoxedFnRetRef::new(f))),
             arg_type: TDesc::of::<Arg>(),
-            ret_type: TDesc::of::<Ret>(),
-            ret_ref: true,
+            ret_type: RetType::of_ref::<Ret>(),
         }
     }
 
@@ -159,17 +156,58 @@ where
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RetType {
+    pub ty: TDesc,
+    pub is_ref: bool,
+}
+
+impl RetType {
+    pub fn of_val<T>() -> Self
+    where
+        T: 'static,
+    {
+        Self {
+            ty: TDesc::of::<T>(),
+            is_ref: false,
+        }
+    }
+
+    pub fn of_ref<T>() -> Self
+    where
+        T: 'static,
+    {
+        Self {
+            ty: TDesc::of::<T>().to_owned(),
+            is_ref: true,
+        }
+    }
+}
+
+impl std::fmt::Display for RetType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_ref {
+            write!(f, "&")?
+        }
+        write!(f, "{}", self.ty)
+    }
+}
+
+impl std::fmt::Debug for RetType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
 pub struct DowncastError {
     pub data: Box<DowncastErrorData>,
 }
 
 pub struct DowncastErrorData {
     pub want_arg: TDesc,
-    pub want_ret: TDesc,
-    pub want_ret_ref: bool,
+    pub want_ret: RetType,
     pub have_arg: TDesc,
-    pub have_ret: TDesc,
-    pub have_ret_ref: bool,
+    pub have_ret: RetType,
 }
 
 pub type DowncastResult<T> = Result<T, DowncastError>;
@@ -184,10 +222,12 @@ impl DowncastError {
             data: Box::new(DowncastErrorData {
                 have_arg: dyn_boxed_fn.arg_type,
                 have_ret: dyn_boxed_fn.ret_type,
-                have_ret_ref: dyn_boxed_fn.ret_ref,
                 want_arg: TDesc::of::<Arg>(),
-                want_ret: TDesc::of::<Ret>(),
-                want_ret_ref,
+                want_ret: if want_ret_ref {
+                    RetType::of_ref::<Ret>()
+                } else {
+                    RetType::of_val::<Ret>()
+                },
             }),
         }
     }
@@ -198,17 +238,13 @@ impl std::fmt::Display for DowncastError {
         write!(f, "DynBoxFn downcast failed. ")?;
         writeln!(
             f,
-            "Want Arg {}, Ret {}{}. ",
-            self.data.want_arg,
-            if self.data.want_ret_ref { "&" } else { "" },
-            self.data.want_ret
+            "Want Arg {}, Ret {}. ",
+            self.data.want_arg, self.data.want_ret
         )?;
         writeln!(
             f,
-            "Have Arg {}, Ret {}{}. ",
-            self.data.have_arg,
-            if self.data.have_ret_ref { "&" } else { "" },
-            self.data.have_ret
+            "Have Arg {}, Ret {}. ",
+            self.data.have_arg, self.data.have_ret
         )?;
 
         Ok(())
