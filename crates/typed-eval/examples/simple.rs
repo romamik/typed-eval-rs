@@ -1,4 +1,4 @@
-use typed_eval::{Compiler, SupportedType, parse_expr};
+use typed_eval::{Compiler, SupportedType};
 
 #[derive(SupportedType)]
 struct User {
