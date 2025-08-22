@@ -62,20 +62,32 @@ fn expr_parser<'src>() -> impl Parser<'src, &'src str, Expr, extra::Err<Rich<'sr
 
         let var = text::ident().map(|s: &str| Expr::Var(s.to_owned()));
 
-        let parens = expr.delimited_by(just('('), just(')'));
+        let parens = expr.clone().delimited_by(just('('), just(')'));
 
         let atom = choice((num, string, var, parens)).padded();
 
-        let field_access = atom.clone().foldl(
+        let field_access = atom.foldl(
             just('.').ignore_then(text::ident()).repeated(),
             |lhs, field: &str| Expr::FieldAccess(Box::new(lhs), field.to_string()),
         );
+
+        let func_call = field_access
+            .then(
+                expr.separated_by(just(','))
+                    .collect::<Vec<Expr>>()
+                    .delimited_by(just('('), just(')'))
+                    .or_not(),
+            )
+            .map(|(body, args)| match args {
+                Some(args) => Expr::FuncCall(Box::new(body), args),
+                None => body,
+            });
 
         let unary = one_of("+-")
             .padded()
             .map(|c| UnOp::from_char(c).unwrap())
             .repeated()
-            .foldr(field_access, |op, rhs| Expr::UnOp(op, Box::new(rhs)));
+            .foldr(func_call, |op, rhs| Expr::UnOp(op, Box::new(rhs)));
 
         let product = unary.clone().foldl(
             one_of("*/")
@@ -202,6 +214,62 @@ mod tests {
                     "bar".to_string()
                 )),
                 "baz".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_function_calls() {
+        // Simple function call without arguments
+        let expr = parse_ok("foo()");
+        assert_eq!(
+            expr,
+            Expr::FuncCall(Box::new(Expr::Var("foo".to_string())), vec![])
+        );
+
+        // Function call with one argument
+        let expr2 = parse_ok("bar(42)");
+        assert_eq!(
+            expr2,
+            Expr::FuncCall(Box::new(Expr::Var("bar".to_string())), vec![Expr::Int(42)])
+        );
+
+        // Function call with multiple arguments
+        let expr3 = parse_ok("baz(1, 2, 3)");
+        assert_eq!(
+            expr3,
+            Expr::FuncCall(
+                Box::new(Expr::Var("baz".to_string())),
+                vec![Expr::Int(1), Expr::Int(2), Expr::Int(3)]
+            )
+        );
+
+        // Nested function calls
+        let expr4 = parse_ok("outer(inner(1, 2), 3)");
+        assert_eq!(
+            expr4,
+            Expr::FuncCall(
+                Box::new(Expr::Var("outer".to_string())),
+                vec![
+                    Expr::FuncCall(
+                        Box::new(Expr::Var("inner".to_string())),
+                        vec![Expr::Int(1), Expr::Int(2)]
+                    ),
+                    Expr::Int(3)
+                ]
+            )
+        );
+
+        // Method-style call: foo.bar(5)
+        let expr5 = parse_ok("foo.bar(5)");
+        assert_eq!(
+            expr5,
+            Expr::FuncCall(
+                Box::new(Expr::FieldAccess(
+                    Box::new(Expr::Var("foo".to_string())),
+                    "bar".to_string()
+                )),
+                vec![Expr::Int(5)]
             )
         );
     }

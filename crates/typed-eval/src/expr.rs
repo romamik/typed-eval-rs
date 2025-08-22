@@ -2,11 +2,12 @@
 pub enum Expr {
     Int(i64),
     Float(f64),
-    Var(String),
-    BinOp(BinOp, Box<Expr>, Box<Expr>),
-    UnOp(UnOp, Box<Expr>),
-    FieldAccess(Box<Expr>, String),
     String(String),
+    Var(String),
+    UnOp(UnOp, Box<Expr>),
+    BinOp(BinOp, Box<Expr>, Box<Expr>),
+    FieldAccess(Box<Expr>, String),
+    FuncCall(Box<Expr>, Vec<Expr>),
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -17,30 +18,23 @@ pub enum BinOp {
     Div,
 }
 
-impl BinOp {
-    pub fn from_char(c: char) -> Option<Self> {
-        match c {
-            '+' => Some(BinOp::Add),
-            '*' => Some(BinOp::Mul),
-            '-' => Some(BinOp::Sub),
-            '/' => Some(BinOp::Div),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum UnOp {
     Neg,
     Plus,
 }
 
-impl UnOp {
-    pub fn from_char(c: char) -> Option<Self> {
-        match c {
-            '+' => Some(UnOp::Plus),
-            '-' => Some(UnOp::Neg),
-            _ => None,
+macro_rules! from_char {
+    ($type:ty { $($char:literal => $variant:ident),* } ) => {
+        impl $type {
+            pub fn from_char(c: char) -> Option<Self> {
+                match c {
+                    $( $char => Some(<$type>::$variant), )*
+                    _ => None,
+                }
+            }
         }
-    }
+    };
 }
+from_char!(UnOp { '+'=>Plus, '-'=>Neg });
+from_char!(BinOp { '+'=>Add, '-'=>Sub, '*'=>Mul, '/'=>Div });

@@ -101,6 +101,10 @@ where
                 let obj = self.compile_typed(obj)?;
                 self.compile_field_access(obj, field_name)?
             }
+
+            Expr::FuncCall(func, args) => {
+                todo!()
+            }
         })
     }
 
