@@ -28,7 +28,7 @@ fn make_ctx() -> Bar {
 fn test_simple_addition() {
     let compiler = Compiler::<()>::new();
     let expr = parse_expr("1 + 2").unwrap();
-    let compiled = compiler.compile::<i64>(&expr).unwrap();
+    let compiled = compiler.compile_expr::<i64>(&expr).unwrap();
     let result = compiled.call(&());
     assert_eq!(result, 3);
 }
@@ -37,7 +37,7 @@ fn test_simple_addition() {
 fn test_field_access_and_addition() {
     let compiler = Compiler::new();
     let expr = parse_expr("foo.a + c").unwrap();
-    let compiled = compiler.compile::<i64>(&expr).unwrap();
+    let compiled = compiler.compile_expr::<i64>(&expr).unwrap();
     let ctx = make_ctx();
     let result = compiled.call(&ctx);
     assert_eq!(result, 10 + 3);
@@ -47,7 +47,7 @@ fn test_field_access_and_addition() {
 fn test_mixed_types_multiplication() {
     let compiler = Compiler::<Bar>::new();
     let expr = parse_expr("foo.a * foo.b").unwrap();
-    let compiled = compiler.compile::<f64>(&expr).unwrap();
+    let compiled = compiler.compile_expr::<f64>(&expr).unwrap();
     let ctx = make_ctx();
     let result = compiled.call(&ctx);
     assert_eq!(result, 10.0 * 2.5);
@@ -57,7 +57,7 @@ fn test_mixed_types_multiplication() {
 fn test_strings() {
     let compiler = Compiler::<Bar>::new();
     let expr = parse_expr(r#" foo.str + "-" + foo.b/2 + "-world\n" "#).unwrap();
-    let compiled = compiler.compile::<String>(&expr).unwrap();
+    let compiled = compiler.compile_expr::<String>(&expr).unwrap();
     let ctx = make_ctx();
     let result = compiled.call(&ctx);
     assert_eq!(result, "hello-1.25-world\n");
@@ -67,7 +67,7 @@ fn test_strings() {
 fn test_complex_expression() {
     let compiler = Compiler::<Bar>::new();
     let expr = parse_expr("(foo.a * foo.b - c) * 2.0").unwrap();
-    let compiled = compiler.compile::<f64>(&expr).unwrap();
+    let compiled = compiler.compile_expr::<f64>(&expr).unwrap();
     let ctx = make_ctx();
     let result = compiled.call(&ctx);
     assert_eq!(result, (10.0 * 2.5 - 3.0) * 2.0);
@@ -84,7 +84,7 @@ fn test_function_0_and_1_args() {
 
     let expr = parse_expr(r#"f0() + "," + f1(i)"#).unwrap();
     let compiler = Compiler::new();
-    let compiled = compiler.compile::<String>(&expr).unwrap();
+    let compiled = compiler.compile_expr::<String>(&expr).unwrap();
 
     let mut ctx = Ctx {
         f0: Box::new(move || "Hello world".to_string()),
@@ -110,7 +110,7 @@ fn test_function_2_and_5_args() {
 
     let expr = parse_expr(r#"func5(func(int, float), 1,2,3, ",")"#).unwrap();
     let compiler = Compiler::new();
-    let compiled = compiler.compile::<String>(&expr).unwrap();
+    let compiled = compiler.compile_expr::<String>(&expr).unwrap();
 
     let mut ctx = Ctx {
         func: Box::new(move |a, b| a * b),

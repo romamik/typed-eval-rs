@@ -1,5 +1,5 @@
 use crate::{
-    BinOp, BoxedFnRetVal, DynBoxedFn, Expr, RetType, SupportedType, TDesc, UnOp,
+    BinOp, BoxedFnRetVal, DynBoxedFn, Expr, RetType, SupportedType, TDesc, UnOp, parse_expr,
     register_basic_types,
 };
 
@@ -52,7 +52,28 @@ where
 
     // compile AST to a function with a known return type
     // can result in cast error if expression resolves to incompatible type
-    pub fn compile<Ret>(&self, expr: &Expr) -> CompilerResult<BoxedFnRetVal<Ctx, Ret>>
+    pub fn compile<Ret>(&self, src: &str) -> CompilerResult<BoxedFnRetVal<Ctx, Ret>>
+    where
+        Ret: 'static,
+    {
+        let parse_result = parse_expr(src);
+        let expr = parse_result.output().ok_or_else(|| {
+            "Parsing failed:".to_string()
+                + &parse_result
+                    .errors()
+                    .map(|err| err.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+        })?;
+
+        let compiled_expr = self.compile_typed(expr)?;
+        let casted_fn = self.cast::<Ret>(compiled_expr)?.get_fn_ret_val()?;
+        Ok(casted_fn)
+    }
+
+    // compile AST to a function with a known return type
+    // can result in cast error if expression resolves to incompatible type
+    pub fn compile_expr<Ret>(&self, expr: &Expr) -> CompilerResult<BoxedFnRetVal<Ctx, Ret>>
     where
         Ret: 'static,
     {
