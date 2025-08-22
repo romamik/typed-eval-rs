@@ -13,7 +13,7 @@ It lets you compile and execute dynamic expressions against a strongly typed con
 ## Quick example
 
 ```rust
-use typed_eval::{Compiler, SupportedType, parse_expr};
+use typed_eval::{Compiler, SupportedType};
 
 #[derive(SupportedType)]
 struct User {
