@@ -1,4 +1,4 @@
-use crate::expr::*;
+use crate::{BinOp, Expr, UnOp};
 use chumsky::{
     cache::{Cache, Cached},
     prelude::*,

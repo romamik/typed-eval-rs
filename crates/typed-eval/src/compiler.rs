@@ -1,9 +1,8 @@
 use crate::{
-    boxed_fn::{BoxedFnRetVal, DynBoxedFn, RetType},
-    expr::{BinOp, Expr, UnOp},
-    supported_type::{SupportedType, register_basic_types},
-    tdesc::TDesc,
+    BinOp, BoxedFnRetVal, DynBoxedFn, Expr, RetType, SupportedType, TDesc, UnOp,
+    register_basic_types,
 };
+
 use std::{
     collections::{HashMap, HashSet},
     marker::PhantomData,
@@ -300,111 +299,5 @@ where
             }),
         );
         self
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{boxed_fn::DynBoxedFn, expr_parser::parse_expr, supported_type::SupportedType};
-
-    #[derive(Debug)]
-    struct Foo {
-        a: i64,
-        b: f64,
-        str: String,
-    }
-
-    impl SupportedType for Foo {
-        fn register<Arg: SupportedType>(compiler: &mut CompilerInner<Arg>) {
-            compiler
-                .register_field("a", |obj: &Self| &obj.a)
-                .register_field("b", |obj: &Self| &obj.b)
-                .register_field("str", |obj: &Self| &obj.str);
-        }
-        fn make_getter<Obj: 'static>(
-            getter: impl Fn(&Obj) -> &Self + Clone + 'static,
-        ) -> DynBoxedFn {
-            DynBoxedFn::make_ret_ref(getter)
-        }
-    }
-
-    #[derive(Debug)]
-    struct Bar {
-        c: i64,
-        foo: Foo,
-    }
-
-    impl SupportedType for Bar {
-        fn register<Arg: SupportedType>(compiler: &mut CompilerInner<Arg>) {
-            compiler
-                .register_field("c", |obj: &Self| &obj.c)
-                .register_field("foo", |obj: &Self| &obj.foo);
-        }
-        fn make_getter<Obj: 'static>(
-            getter: impl Fn(&Obj) -> &Self + Clone + 'static,
-        ) -> DynBoxedFn {
-            DynBoxedFn::make_ret_ref(getter)
-        }
-    }
-
-    fn make_ctx() -> Bar {
-        Bar {
-            foo: Foo {
-                a: 10,
-                b: 2.5,
-                str: "hello".into(),
-            },
-            c: 3,
-        }
-    }
-
-    #[test]
-    fn test_simple_addition() {
-        let compiler = Compiler::<()>::new();
-        let expr = parse_expr("1 + 2").unwrap();
-        let compiled = compiler.compile::<i64>(&expr).unwrap();
-        let result = compiled.call(&());
-        assert_eq!(result, 3);
-    }
-
-    #[test]
-    fn test_field_access_and_addition() {
-        let compiler = Compiler::<Bar>::new();
-        let expr = parse_expr("foo.a + c").unwrap();
-        let compiled = compiler.compile::<i64>(&expr).unwrap();
-        let ctx = make_ctx();
-        let result = compiled.call(&ctx);
-        assert_eq!(result, 10 + 3);
-    }
-
-    #[test]
-    fn test_mixed_types_multiplication() {
-        let compiler = Compiler::<Bar>::new();
-        let expr = parse_expr("foo.a * foo.b").unwrap();
-        let compiled = compiler.compile::<f64>(&expr).unwrap();
-        let ctx = make_ctx();
-        let result = compiled.call(&ctx);
-        assert_eq!(result, 10.0 * 2.5);
-    }
-
-    #[test]
-    fn test_strings() {
-        let compiler = Compiler::<Bar>::new();
-        let expr = parse_expr(r#" foo.str + "-" + foo.b/2 + "-world\n" "#).unwrap();
-        let compiled = compiler.compile::<String>(&expr).unwrap();
-        let ctx = make_ctx();
-        let result = compiled.call(&ctx);
-        assert_eq!(result, "hello-1.25-world\n");
-    }
-
-    #[test]
-    fn test_complex_expression() {
-        let compiler = Compiler::<Bar>::new();
-        let expr = parse_expr("(foo.a * foo.b - c) * 2.0").unwrap();
-        let compiled = compiler.compile::<f64>(&expr).unwrap();
-        let ctx = make_ctx();
-        let result = compiled.call(&ctx);
-        assert_eq!(result, (10.0 * 2.5 - 3.0) * 2.0);
     }
 }

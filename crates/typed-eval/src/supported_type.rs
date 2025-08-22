@@ -1,8 +1,4 @@
-use crate::{
-    boxed_fn::DynBoxedFn,
-    compiler::CompilerInner,
-    expr::{BinOp, UnOp},
-};
+use crate::{BinOp, CompilerInner, DynBoxedFn, UnOp};
 
 pub trait SupportedType: Sized + 'static {
     // register type with compiler, call all these register_bin_op, register_field

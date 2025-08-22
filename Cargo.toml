@@ -1,7 +1,5 @@
-[package]
-name = "expr-interp"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-chumsky = { version = "0.10.1", features = ["unstable"] }
+[workspace]
+resolver = "3"
+members = [
+    "crates/*",
+]

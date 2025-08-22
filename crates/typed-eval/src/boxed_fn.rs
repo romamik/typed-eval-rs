@@ -1,4 +1,4 @@
-use crate::tdesc::TDesc;
+use crate::TDesc;
 use std::any::Any;
 
 /// stores a function, allows to downcast back to the function knowing Arg and Ret types
