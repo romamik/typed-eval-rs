@@ -1,4 +1,4 @@
-use crate::{BinOp, BoxedFnRetVal, CompilerInner, CompilerResult, DynBoxedFn, UnOp};
+use crate::{BinOp, CompilerInner, DynBoxedFn, UnOp};
 
 pub trait SupportedType: Sized + 'static {
     // register type with compiler, call all these register_bin_op, register_field
@@ -71,81 +71,48 @@ impl SupportedType for String {
     }
 }
 
-impl<R> SupportedType for Box<dyn Fn() -> R>
-where
-    R: 'static,
-{
-    fn register<Ctx: SupportedType>(compiler: &mut CompilerInner<Ctx>) {
-        compiler.register_function(
-            |_compiler, args: Vec<DynBoxedFn>| {
-                if !args.is_empty() {
-                    return Err(format!("Expected 0 arguments, got {}", args.len()));
-                }
-                Ok(DynBoxedFn::make_ret_val(|_: &Ctx| ()))
-            },
-            |func: &Self, _arg: ()| (func)(),
-        );
-    }
+macro_rules! impl_supported_type_for_fn {
+    ($($args:ident),*) => {
+        impl<$($args,)* R> SupportedType for Box<dyn Fn($($args),*) -> R>
+        where
+            $($args: 'static,)*
+            R: 'static,
+        {
+            #[allow(non_snake_case, unused_parens, unused_variables, unused_mut, clippy::unused_unit)]
+            fn register<Ctx: SupportedType>(compiler: &mut CompilerInner<Ctx>) {
+                compiler.register_function(
+                    |compiler, mut args: Vec<DynBoxedFn>| {
+                        let expected_arg_count = (&[ $(stringify!($args)),* ] as &[&str]).len();
 
-    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + Clone + 'static) -> DynBoxedFn {
-        DynBoxedFn::make_ret_ref(move |obj: &Obj| getter(obj))
-    }
+                        if args.len() != expected_arg_count {
+                            return Err(format!("Expected {} arguments, got {}", expected_arg_count, args.len()));
+                        }
+
+                        $(
+                            let $args = compiler
+                                .cast::<$args>(args.remove(0))?
+                                .get_fn_ret_val::<Ctx, $args>()?;
+                        )*
+
+                        Ok(DynBoxedFn::make_ret_val(move |ctx: &Ctx| {
+                            ( $( $args.call(ctx) ),* )
+                        }))
+                    },
+                    |func: &Self, ( $($args),* ): ( $($args),* )| (func)( $($args),* ),
+                );
+            }
+
+            fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + Clone + 'static) -> DynBoxedFn {
+                DynBoxedFn::make_ret_ref(move |obj: &Obj| getter(obj))
+            }
+        }
+
+    };
 }
 
-impl<A, R> SupportedType for Box<dyn Fn(A) -> R>
-where
-    A: 'static,
-    R: 'static,
-{
-    fn register<Ctx: SupportedType>(compiler: &mut CompilerInner<Ctx>) {
-        compiler.register_function(
-            |compiler, mut args: Vec<DynBoxedFn>| {
-                if args.len() != 1 {
-                    return Err(format!("Expected 1 arguments, got {}", args.len()));
-                }
-                let arg = compiler
-                    .cast::<A>(args.pop().unwrap())?
-                    .get_fn_ret_val::<Ctx, A>()?;
-                Ok(DynBoxedFn::make_ret_val(move |ctx: &Ctx| arg.call(ctx)))
-            },
-            |func: &Self, arg: A| (func)(arg),
-        );
-    }
-
-    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + Clone + 'static) -> DynBoxedFn {
-        DynBoxedFn::make_ret_ref(move |obj: &Obj| getter(obj))
-    }
-}
-
-impl<A0, A1, R> SupportedType for Box<dyn Fn(A0, A1) -> R>
-where
-    A0: 'static,
-    A1: 'static,
-    R: 'static,
-{
-    fn register<Ctx: SupportedType>(compiler: &mut CompilerInner<Ctx>) {
-        compiler.register_function(
-            |compiler, mut args: Vec<DynBoxedFn>| {
-                if args.len() != 2 {
-                    return Err(format!("Expected 2 arguments, got {}", args.len()));
-                }
-
-                let arg1 = compiler
-                    .cast::<A1>(args.pop().unwrap())?
-                    .get_fn_ret_val::<Ctx, A1>()?;
-                let arg0 = compiler
-                    .cast::<A0>(args.pop().unwrap())?
-                    .get_fn_ret_val::<Ctx, A0>()?;
-
-                Ok(DynBoxedFn::make_ret_val(move |ctx: &Ctx| {
-                    (arg0.call(ctx), arg1.call(ctx))
-                }))
-            },
-            |func: &Self, (a0, a1): (A0, A1)| (func)(a0, a1),
-        );
-    }
-
-    fn make_getter<Obj: 'static>(getter: impl Fn(&Obj) -> &Self + Clone + 'static) -> DynBoxedFn {
-        DynBoxedFn::make_ret_ref(move |obj: &Obj| getter(obj))
-    }
-}
+impl_supported_type_for_fn!();
+impl_supported_type_for_fn!(A);
+impl_supported_type_for_fn!(A0, A1);
+impl_supported_type_for_fn!(A0, A1, A2);
+impl_supported_type_for_fn!(A0, A1, A2, A3);
+impl_supported_type_for_fn!(A0, A1, A2, A3, A4);

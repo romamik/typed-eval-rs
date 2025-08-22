@@ -1,5 +1,3 @@
-use std::{cell::Cell, rc::Rc};
-
 use typed_eval::{Compiler, SupportedType, parse_expr};
 
 #[derive(Debug, SupportedType)]
@@ -101,24 +99,32 @@ fn test_function_0_and_1_args() {
 }
 
 #[test]
-fn test_function_2_args() {
+fn test_function_2_and_5_args() {
     #[derive(SupportedType)]
     struct Ctx {
-        f: Box<dyn Fn(i64, i64) -> i64>,
-        i: i64,
+        func: Box<dyn Fn(f64, f64) -> f64>,
+        func5: Box<dyn Fn(f64, f64, i64, i64, String) -> String>,
+        int: i64,
+        float: f64,
     }
 
-    let expr = parse_expr(r#"f(i, 2)"#).unwrap();
+    let expr = parse_expr(r#"func5(func(int, float), 1,2,3, ",")"#).unwrap();
     let compiler = Compiler::new();
-    let compiled = compiler.compile::<i64>(&expr).unwrap();
+    let compiled = compiler.compile::<String>(&expr).unwrap();
 
     let mut ctx = Ctx {
-        f: Box::new(move |a, b| a * b),
-        i: 0,
+        func: Box::new(move |a, b| a * b),
+        func5: Box::new(move |a, b, c, d, delim| {
+            format!("{a} {delim} {b} {delim} {c} {delim} {d}")
+        }),
+        int: 2,
+        float: 3.2,
     };
     let result = compiled.call(&ctx);
-    assert_eq!(result, 0);
-    ctx.i = 12;
+    assert_eq!(result, "6.4 , 1 , 2 , 3");
+
+    ctx.int = 12;
+    ctx.float = 25.3;
     let result = compiled.call(&ctx);
-    assert_eq!(result, 24);
+    assert_eq!(result, format!("{} , 1 , 2 , 3", 12.0 * 25.3));
 }
