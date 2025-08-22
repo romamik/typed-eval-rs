@@ -26,7 +26,7 @@ fn supported_type_derive_impl(ast: &syn::DeriveInput) -> TokenStream {
 
     TokenStream::from(quote! {
         impl typed_eval::SupportedType for #struct_name {
-            fn register<Arg: typed_eval::SupportedType>(compiler: &mut typed_eval::CompilerInner<Arg>) {
+            fn register<Ctx: typed_eval::SupportedType>(compiler: &mut typed_eval::CompilerInner<Ctx>) {
                 #(
                     #register_fields
                 )*

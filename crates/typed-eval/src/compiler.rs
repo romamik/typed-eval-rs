@@ -8,17 +8,18 @@ use std::{
     marker::PhantomData,
 };
 
-pub struct Compiler<Arg> {
-    inner: CompilerInner<Arg>,
+pub struct Compiler<Ctx> {
+    inner: CompilerInner<Ctx>,
 }
 
-pub struct CompilerInner<Arg> {
+pub struct CompilerInner<Ctx> {
     registered_types: HashSet<TDesc>,
     casts: HashMap<(RetType, RetType), CastFn>,
     un_ops: HashMap<(RetType, UnOp), UnopFn>,
     bin_ops: HashMap<(RetType, BinOp), BinopFn>,
     fields: HashMap<(RetType, &'static str), FieldFn>,
-    phantom_data: PhantomData<Arg>,
+    functions: HashMap<RetType, FunctionFn<Ctx>>, // key is type of the function
+    phantom_data: PhantomData<Ctx>,
 }
 
 pub type CompilerResult<T> = Result<T, String>;
@@ -27,10 +28,12 @@ type CastFn = Box<dyn Fn(&DynBoxedFn) -> Option<DynBoxedFn>>;
 type UnopFn = Box<dyn Fn(DynBoxedFn) -> CompilerResult<DynBoxedFn>>;
 type BinopFn = Box<dyn Fn(DynBoxedFn, DynBoxedFn) -> CompilerResult<DynBoxedFn>>;
 type FieldFn = Box<dyn Fn(DynBoxedFn) -> CompilerResult<DynBoxedFn>>;
+type FunctionFn<Ctx> =
+    Box<dyn Fn(&Compiler<Ctx>, DynBoxedFn, Vec<DynBoxedFn>) -> CompilerResult<DynBoxedFn>>;
 
-impl<Arg> Compiler<Arg>
+impl<Ctx> Compiler<Ctx>
 where
-    Arg: SupportedType,
+    Ctx: SupportedType,
 {
     pub fn new() -> Self {
         let mut inner = CompilerInner {
@@ -39,16 +42,17 @@ where
             un_ops: Default::default(),
             bin_ops: Default::default(),
             fields: Default::default(),
+            functions: Default::default(),
             phantom_data: PhantomData,
         };
         register_basic_types(&mut inner);
-        inner.register_type::<Arg>();
+        inner.register_type::<Ctx>();
         Self { inner }
     }
 
     // compile AST to a function with a known return type
     // can result in cast error if expression resolves to incompatible type
-    pub fn compile<Ret>(&self, expr: &Expr) -> CompilerResult<BoxedFnRetVal<Arg, Ret>>
+    pub fn compile<Ret>(&self, expr: &Expr) -> CompilerResult<BoxedFnRetVal<Ctx, Ret>>
     where
         Ret: 'static,
     {
@@ -60,41 +64,41 @@ where
     // compile AST to DynBoxedFn, the return type is determined from expression
     pub fn compile_typed(&self, expr: &Expr) -> CompilerResult<DynBoxedFn> {
         Ok(match expr {
-            &Expr::Int(val) => DynBoxedFn::make_ret_val(move |_: &Arg| val),
+            &Expr::Int(val) => DynBoxedFn::make_ret_val(move |_: &Ctx| val),
 
-            &Expr::Float(val) => DynBoxedFn::make_ret_val(move |_: &Arg| val),
+            &Expr::Float(val) => DynBoxedFn::make_ret_val(move |_: &Ctx| val),
 
             Expr::String(str) => {
                 let str = str.clone();
-                DynBoxedFn::make_ret_val(move |_: &Arg| str.clone())
+                DynBoxedFn::make_ret_val(move |_: &Ctx| str.clone())
             }
 
             Expr::Var(name) => {
-                self.compile_field_access(DynBoxedFn::make_ret_ref(|arg: &Arg| arg), name)?
+                self.compile_field_access(DynBoxedFn::make_ret_ref(|ctx: &Ctx| ctx), name)?
             }
 
             Expr::UnOp(op, rhs) => {
                 let rhs = self.compile_typed(rhs)?;
-                let Some(un_op_fn) = self.inner.un_ops.get(&(rhs.ret_type, *op)) else {
+                let Some(compile_un_op_fn) = self.inner.un_ops.get(&(rhs.ret_type, *op)) else {
                     return Err(format!(
                         "No unary operator {:?} for type {:?}",
                         op, rhs.ret_type
                     ));
                 };
-                un_op_fn(rhs)?
+                compile_un_op_fn(rhs)?
             }
 
             Expr::BinOp(op, lhs, rhs) => {
                 let lhs = self.compile_typed(lhs)?;
                 let rhs = self.compile_typed(rhs)?;
                 let (lhs, rhs) = self.cast_same_type(lhs, rhs)?;
-                let Some(bin_op_fn) = self.inner.bin_ops.get(&(lhs.ret_type, *op)) else {
+                let Some(compile_bin_op_fn) = self.inner.bin_ops.get(&(lhs.ret_type, *op)) else {
                     return Err(format!(
                         "No binary operator {:?} for type {:?}",
                         op, lhs.ret_type
                     ));
                 };
-                bin_op_fn(lhs, rhs)?
+                compile_bin_op_fn(lhs, rhs)?
             }
 
             Expr::FieldAccess(obj, field_name) => {
@@ -103,7 +107,17 @@ where
             }
 
             Expr::FuncCall(func, args) => {
-                todo!()
+                let func = self.compile_typed(func)?;
+                let args = args
+                    .iter()
+                    .map(|arg| self.compile_typed(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                let Some(compile_func_fn) = self.inner.functions.get(&func.ret_type) else {
+                    return Err(format!("Cannot call {:?}", func.ret_type));
+                };
+
+                compile_func_fn(self, func, args)?
             }
         })
     }
@@ -114,15 +128,15 @@ where
         field_name: &str,
     ) -> CompilerResult<DynBoxedFn> {
         let obj_type = obj.ret_type;
-        let Some(field_fn) = self.inner.fields.get(&(obj_type, field_name)) else {
+        let Some(compile_field_access_fn) = self.inner.fields.get(&(obj_type, field_name)) else {
             return Err(format!("No field {field_name} on type {obj_type}"));
         };
 
-        field_fn(obj)
+        compile_field_access_fn(obj)
     }
 
     // try cast expression so that it returns type To
-    fn cast<To>(&self, from: DynBoxedFn) -> CompilerResult<DynBoxedFn>
+    pub fn cast<To>(&self, from: DynBoxedFn) -> CompilerResult<DynBoxedFn>
     where
         To: 'static,
     {
@@ -144,7 +158,7 @@ where
             return Err(from);
         };
 
-        // cast_fn takes Fn(Arg)->From and return Fn(Arg)->To
+        // cast_fn takes Fn(Ctx)->From and return Fn(Ctx)->To
         cast_fn(&from).ok_or(from)
     }
 
@@ -175,18 +189,18 @@ where
     }
 }
 
-impl<Arg> Default for Compiler<Arg>
+impl<Ctx> Default for Compiler<Ctx>
 where
-    Arg: SupportedType,
+    Ctx: SupportedType,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<Arg> CompilerInner<Arg>
+impl<Ctx> CompilerInner<Ctx>
 where
-    Arg: SupportedType + 'static,
+    Ctx: SupportedType + 'static,
 {
     // check if T is registered and call T::register if not
     pub fn register_type<T: SupportedType + 'static>(&mut self) {
@@ -210,12 +224,12 @@ where
         self.casts.insert(
             (RetType::of_val::<From>(), RetType::of_val::<To>()),
             Box::new(move |from| {
-                // this function takes function Fn(Arg)->From and return function Fn(Arg)->To
+                // this function takes function Fn(Ctx)->From and return function Fn(Ctx)->To
 
-                let from_fn = from.get_fn_ret_val::<Arg, From>().ok()?;
+                let from_fn = from.get_fn_ret_val::<Ctx, From>().ok()?;
 
-                Some(DynBoxedFn::make_ret_val(move |arg: &Arg| {
-                    cast_fn(from_fn.call(arg))
+                Some(DynBoxedFn::make_ret_val(move |ctx: &Ctx| {
+                    cast_fn(from_fn.call(ctx))
                 }))
             }),
         );
@@ -234,13 +248,13 @@ where
         self.un_ops.insert(
             (RetType::of_val::<T>(), un_op),
             Box::new(move |rhs| {
-                // this function takes takes and returns functions Fn(Arg)->T
+                // this function takes takes and returns functions Fn(Ctx)->T
                 // returned function applies unary operation to result of the rhs function
 
-                let rhs_expr = rhs.get_fn_ret_val::<Arg, T>()?;
+                let rhs_expr = rhs.get_fn_ret_val::<Ctx, T>()?;
 
-                Ok(DynBoxedFn::make_ret_val(move |arg: &Arg| {
-                    unop_fn(rhs_expr.call(arg))
+                Ok(DynBoxedFn::make_ret_val(move |ctx: &Ctx| {
+                    unop_fn(rhs_expr.call(ctx))
                 }))
             }),
         );
@@ -260,15 +274,15 @@ where
             (RetType::of_val::<T>(), bin_op),
             Box::new(
                 move |lhs: DynBoxedFn, rhs: DynBoxedFn| -> CompilerResult<DynBoxedFn> {
-                    // this function takes rhs and lhs function of type Fn(Arg)->T
-                    // return function Fn(Arg)->T which returns the result of the binary operation
+                    // this function takes rhs and lhs function of type Fn(Ctx)->T
+                    // return function Fn(Ctx)->T which returns the result of the binary operation
 
-                    let lhs_fn = lhs.get_fn_ret_val::<Arg, T>()?;
+                    let lhs_fn = lhs.get_fn_ret_val::<Ctx, T>()?;
 
-                    let rhs_fn = rhs.get_fn_ret_val::<Arg, T>()?;
+                    let rhs_fn = rhs.get_fn_ret_val::<Ctx, T>()?;
 
-                    Ok(DynBoxedFn::make_ret_val(move |arg: &Arg| {
-                        bin_op_fn(lhs_fn.call(arg), rhs_fn.call(arg))
+                    Ok(DynBoxedFn::make_ret_val(move |ctx: &Ctx| {
+                        bin_op_fn(lhs_fn.call(ctx), rhs_fn.call(ctx))
                     }))
                 },
             ),
@@ -292,16 +306,40 @@ where
         self.fields.insert(
             (obj_type, field_name),
             Box::new(move |obj: DynBoxedFn| -> CompilerResult<DynBoxedFn> {
-                // this function takes function of type Fn(Arg)->Obj
-                // and returns function of type Fn(Arg)->Field
+                // this function takes function of type Fn(Ctx)->Obj
+                // and returns function of type Fn(Ctx)->Field
 
-                let obj_fn = obj.get_fn_ret_ref::<Arg, Obj>()?;
+                let obj_fn = obj.get_fn_ret_ref::<Ctx, Obj>()?;
 
-                Ok(Field::make_getter(move |arg: &Arg| {
-                    getter(obj_fn.call(arg))
+                Ok(Field::make_getter(move |ctx: &Ctx| {
+                    getter(obj_fn.call(ctx))
                 }))
             }),
         );
         self
+    }
+
+    pub fn register_function<A, R, F>(
+        &mut self,
+        prepare_args: impl Fn(&Compiler<Ctx>, Vec<DynBoxedFn>) -> CompilerResult<DynBoxedFn> + 'static,
+        call: impl Fn(&F, A) -> R + Copy + 'static,
+    ) where
+        F: 'static,
+        A: 'static,
+        R: 'static,
+    {
+        self.functions.insert(
+            RetType::of_ref::<F>(),
+            Box::new(move |compiler, func, args| {
+                let func = func.get_fn_ret_ref::<Ctx, F>()?;
+                let args = prepare_args(compiler, args)?;
+                let args = args.get_fn_ret_val()?;
+                Ok(DynBoxedFn::make_ret_val(move |ctx: &Ctx| {
+                    let func = func.call(ctx);
+                    let args = args.call(ctx);
+                    call(func, args)
+                }))
+            }),
+        );
     }
 }

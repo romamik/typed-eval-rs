@@ -1,3 +1,5 @@
+use std::{cell::Cell, rc::Rc};
+
 use typed_eval::{Compiler, SupportedType, parse_expr};
 
 #[derive(Debug, SupportedType)]
@@ -71,4 +73,52 @@ fn test_complex_expression() {
     let ctx = make_ctx();
     let result = compiled.call(&ctx);
     assert_eq!(result, (10.0 * 2.5 - 3.0) * 2.0);
+}
+
+#[test]
+fn test_function_0_and_1_args() {
+    #[derive(SupportedType)]
+    struct Ctx {
+        f0: Box<dyn Fn() -> String>,
+        f1: Box<dyn Fn(i64) -> String>,
+        i: i64,
+    }
+
+    let expr = parse_expr(r#"f0() + "," + f1(i)"#).unwrap();
+    let compiler = Compiler::new();
+    let compiled = compiler.compile::<String>(&expr).unwrap();
+
+    let mut ctx = Ctx {
+        f0: Box::new(move || "Hello world".to_string()),
+        f1: Box::new(|a| format!("f1({a})")),
+        i: 0,
+    };
+    let result = compiled.call(&ctx);
+    assert_eq!(result, "Hello world,f1(0)");
+    ctx.i = 2;
+    let result = compiled.call(&ctx);
+    assert_eq!(result, "Hello world,f1(2)");
+}
+
+#[test]
+fn test_function_2_args() {
+    #[derive(SupportedType)]
+    struct Ctx {
+        f: Box<dyn Fn(i64, i64) -> i64>,
+        i: i64,
+    }
+
+    let expr = parse_expr(r#"f(i, 2)"#).unwrap();
+    let compiler = Compiler::new();
+    let compiled = compiler.compile::<i64>(&expr).unwrap();
+
+    let mut ctx = Ctx {
+        f: Box::new(move |a, b| a * b),
+        i: 0,
+    };
+    let result = compiled.call(&ctx);
+    assert_eq!(result, 0);
+    ctx.i = 12;
+    let result = compiled.call(&ctx);
+    assert_eq!(result, 24);
 }
