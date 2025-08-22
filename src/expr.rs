@@ -6,6 +6,7 @@ pub enum Expr {
     BinOp(BinOp, Box<Expr>, Box<Expr>),
     UnOp(UnOp, Box<Expr>),
     FieldAccess(Box<Expr>, String),
+    String(String),
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]

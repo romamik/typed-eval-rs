@@ -47,11 +47,24 @@ fn expr_parser<'src>() -> impl Parser<'src, &'src str, Expr, extra::Err<Rich<'sr
                 }
             });
 
+        let string = choice((
+            none_of("\"\\"),
+            just(r#"\\"#).to('\\'),
+            just(r#"\""#).to('"'),
+            just(r#"\n"#).to('\n'),
+            just(r#"\t"#).to('\t'),
+            just(r#"\r"#).to('\r'),
+        ))
+        .repeated()
+        .collect::<String>()
+        .map(Expr::String)
+        .delimited_by(just('"'), just('"'));
+
         let var = text::ident().map(|s: &str| Expr::Var(s.to_owned()));
 
         let parens = expr.delimited_by(just('('), just(')'));
 
-        let atom = choice((num, var, parens)).padded();
+        let atom = choice((num, string, var, parens)).padded();
 
         let field_access = atom.clone().foldl(
             just('.').ignore_then(text::ident()).repeated(),
@@ -110,6 +123,16 @@ mod tests {
         assert_eq!(parse_ok("1.1415"), Expr::Float(1.1415));
         assert_eq!(parse_ok("2e3"), Expr::Float(2000.0));
         assert_eq!(parse_ok("2e-3"), Expr::Float(2e-3));
+    }
+
+    #[test]
+    fn test_parse_strings() {
+        assert_eq!(parse_ok(r#" "Hello" "#), Expr::String("Hello".into()));
+        assert_eq!(
+            parse_ok(r#" "\" world\"" "#),
+            Expr::String("\" world\"".into())
+        );
+        assert_eq!(parse_ok(r#" "\n\r\t\\" "#), Expr::String("\n\r\t\\".into()));
     }
 
     #[test]

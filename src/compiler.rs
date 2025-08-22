@@ -65,6 +65,11 @@ where
 
             &Expr::Float(val) => DynBoxedFn::make_ret_val(move |_: &Arg| val),
 
+            Expr::String(str) => {
+                let str = str.clone();
+                DynBoxedFn::make_ret_val(move |_: &Arg| str.clone())
+            }
+
             Expr::Var(name) => {
                 self.compile_field_access(DynBoxedFn::make_ret_ref(|arg: &Arg| arg), name)?
             }
@@ -307,13 +312,15 @@ mod tests {
     struct Foo {
         a: i64,
         b: f64,
+        str: String,
     }
 
     impl SupportedType for Foo {
         fn register<Arg: SupportedType>(compiler: &mut CompilerInner<Arg>) {
             compiler
                 .register_field("a", |obj: &Self| &obj.a)
-                .register_field("b", |obj: &Self| &obj.b);
+                .register_field("b", |obj: &Self| &obj.b)
+                .register_field("str", |obj: &Self| &obj.str);
         }
         fn make_getter<Obj: 'static>(
             getter: impl Fn(&Obj) -> &Self + Clone + 'static,
@@ -343,7 +350,11 @@ mod tests {
 
     fn make_ctx() -> Bar {
         Bar {
-            foo: Foo { a: 10, b: 2.5 },
+            foo: Foo {
+                a: 10,
+                b: 2.5,
+                str: "hello".into(),
+            },
             c: 3,
         }
     }
@@ -375,6 +386,16 @@ mod tests {
         let ctx = make_ctx();
         let result = compiled.call(&ctx);
         assert_eq!(result, 10.0 * 2.5);
+    }
+
+    #[test]
+    fn test_strings() {
+        let compiler = Compiler::<Bar>::new();
+        let expr = parse_expr(r#" foo.str + "-" + foo.b/2 + "-world\n" "#).unwrap();
+        let compiled = compiler.compile::<String>(&expr).unwrap();
+        let ctx = make_ctx();
+        let result = compiled.call(&ctx);
+        assert_eq!(result, "hello-1.25-world\n");
     }
 
     #[test]
