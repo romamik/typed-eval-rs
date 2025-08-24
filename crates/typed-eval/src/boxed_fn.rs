@@ -16,7 +16,7 @@ impl DynBoxedFn {
         Ret: 'static,
     {
         Self {
-            boxed_fn: Box::new(BoxedFn::RetVal(BoxedFnRetVal::new(f))),
+            boxed_fn: Box::new(BoxedFnRetVal::new(f)),
             arg_type: TDesc::of::<Arg>(),
             ret_type: RetType::of_val::<Ret>(),
         }
@@ -28,7 +28,7 @@ impl DynBoxedFn {
         Ret: 'static,
     {
         Self {
-            boxed_fn: Box::new(BoxedFn::RetRef(BoxedFnRetRef::new(f))),
+            boxed_fn: Box::new(BoxedFnRetRef::new(f)),
             arg_type: TDesc::of::<Arg>(),
             ret_type: RetType::of_ref::<Ret>(),
         }
@@ -40,8 +40,8 @@ impl DynBoxedFn {
         Ret: 'static,
     {
         self.boxed_fn
-            .downcast_ref::<BoxedFn<Arg, Ret>>()
-            .and_then(|boxed_fn| boxed_fn.get_fn_ret_val())
+            .downcast_ref::<BoxedFnRetVal<Arg, Ret>>()
+            .cloned()
             .ok_or_else(|| DowncastError::new::<Arg, Ret>(self, false))
     }
 
@@ -51,30 +51,9 @@ impl DynBoxedFn {
         Ret: 'static,
     {
         self.boxed_fn
-            .downcast_ref::<BoxedFn<Arg, Ret>>()
-            .and_then(|boxed_fn| boxed_fn.get_fn_ret_ref())
+            .downcast_ref::<BoxedFnRetRef<Arg, Ret>>()
+            .cloned()
             .ok_or_else(|| DowncastError::new::<Arg, Ret>(self, true))
-    }
-}
-
-enum BoxedFn<Arg, Ret> {
-    RetVal(BoxedFnRetVal<Arg, Ret>),
-    RetRef(BoxedFnRetRef<Arg, Ret>),
-}
-
-impl<Arg, Ret> BoxedFn<Arg, Ret> {
-    fn get_fn_ret_val(&self) -> Option<BoxedFnRetVal<Arg, Ret>> {
-        match self {
-            Self::RetVal(boxed_fn) => Some(boxed_fn.clone()),
-            _ => None,
-        }
-    }
-
-    fn get_fn_ret_ref(&self) -> Option<BoxedFnRetRef<Arg, Ret>> {
-        match self {
-            Self::RetRef(boxed_fn) => Some(boxed_fn.clone()),
-            _ => None,
-        }
     }
 }
 
