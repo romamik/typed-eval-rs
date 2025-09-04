@@ -9,6 +9,7 @@ use std::{
 pub struct DynFn {
     pub arg_type: TypeId,
     pub ret_type: TypeId,
+    // TODO: make DynFn clonable without using Rc
     boxed_fun: Rc<dyn Any>,
 }
 
