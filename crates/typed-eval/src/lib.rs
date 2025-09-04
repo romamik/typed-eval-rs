@@ -2,7 +2,7 @@ mod dyn_fn;
 mod expr;
 mod expr_parser;
 
-use std::{any::TypeId, collections::HashMap, marker::PhantomData};
+use std::{any::TypeId, collections::HashMap, hash::Hash, marker::PhantomData};
 
 pub use dyn_fn::*;
 pub use expr::*;
@@ -12,6 +12,9 @@ pub trait ExprContext: 'static {
     fn field_getter(field_name: &str) -> Option<fn(&Self) -> f64>;
 }
 
+type UnOpKey = (UnOp, TypeId);
+type CompileUnOpFunc = Box<dyn Fn(DynFn) -> Result<DynFn, String>>;
+
 type BinOpKey = (BinOp, TypeId);
 type CompileBinOpFunc = Box<dyn Fn(DynFn, DynFn) -> Result<DynFn, String>>;
 
@@ -20,6 +23,7 @@ type CompileCastFunc = Box<dyn Fn(DynFn) -> Result<DynFn, String>>;
 
 pub struct Compiler<Ctx> {
     casts: HashMap<CastKey, CompileCastFunc>,
+    unary_operations: HashMap<UnOpKey, CompileUnOpFunc>,
     binary_operations: HashMap<BinOpKey, CompileBinOpFunc>,
     ctx_type: PhantomData<Ctx>,
 }
@@ -28,6 +32,7 @@ impl<Ctx: ExprContext> Default for Compiler<Ctx> {
     fn default() -> Self {
         let mut compiler = Self {
             casts: HashMap::new(),
+            unary_operations: HashMap::new(),
             binary_operations: HashMap::new(),
             ctx_type: PhantomData,
         };
@@ -38,11 +43,15 @@ impl<Ctx: ExprContext> Default for Compiler<Ctx> {
         compiler.register_bin_op(BinOp::Sub, |lhs: i64, rhs: i64| lhs - rhs);
         compiler.register_bin_op(BinOp::Mul, |lhs: i64, rhs: i64| lhs * rhs);
         compiler.register_bin_op(BinOp::Div, |lhs: i64, rhs: i64| lhs / rhs);
+        compiler.register_un_op(UnOp::Neg, |rhs: i64| -rhs);
+        compiler.register_un_op(UnOp::Plus, |rhs: i64| rhs);
 
         compiler.register_bin_op(BinOp::Add, |lhs: f64, rhs: f64| lhs + rhs);
         compiler.register_bin_op(BinOp::Sub, |lhs: f64, rhs: f64| lhs - rhs);
         compiler.register_bin_op(BinOp::Mul, |lhs: f64, rhs: f64| lhs * rhs);
         compiler.register_bin_op(BinOp::Div, |lhs: f64, rhs: f64| lhs / rhs);
+        compiler.register_un_op(UnOp::Neg, |rhs: f64| -rhs);
+        compiler.register_un_op(UnOp::Plus, |rhs: f64| rhs);
 
         compiler
     }
@@ -58,6 +67,17 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
             Ok(DynFn::new(move |ctx| cast_fn(from(ctx))))
         });
         self.casts.insert(key, compile_func);
+    }
+
+    fn register_un_op<T: 'static>(&mut self, op: UnOp, un_op_fn: fn(T) -> T) {
+        let key = (op, TypeId::of::<T>());
+        let compile_func = Box::new(move |rhs: DynFn| -> Result<DynFn, String> {
+            let rhs = rhs
+                .downcast::<Ctx, T>()
+                .ok_or("Compiler error: rhs type mistmatch")?;
+            Ok(DynFn::new(move |ctx| un_op_fn(rhs(ctx))))
+        });
+        self.unary_operations.insert(key, compile_func);
     }
 
     fn register_bin_op<T: 'static>(&mut self, op: BinOp, bin_op_fn: fn(T, T) -> T) {
@@ -86,6 +106,7 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
         compile_cast_func(expr)
     }
 
+    // helper functions that tries to make two expressions the same type
     fn cast_same_type(&self, a: DynFn, b: DynFn) -> Result<(DynFn, DynFn), String> {
         if a.ret_type == b.ret_type {
             return Ok((a, b));
@@ -110,18 +131,13 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
                 DynFn::new(field_getter)
             }
             Expr::UnOp(op, rhs) => {
-                let rhs_dyn = self.compile_expr(rhs)?;
-                if rhs_dyn.ret_type == TypeId::of::<f64>() {
-                    let rhs = rhs_dyn
-                        .downcast::<Ctx, f64>()
-                        .ok_or("Compiler error: rhs type mismatch")?;
-                    match op {
-                        UnOp::Neg => DynFn::new(move |ctx| -rhs(ctx)),
-                        UnOp::Plus => rhs_dyn,
-                    }
-                } else {
+                let rhs = self.compile_expr(rhs)?;
+
+                let Some(compile_un_op) = self.unary_operations.get(&(*op, rhs.ret_type)) else {
                     Err("Unsupported unary operation")?
-                }
+                };
+
+                compile_un_op(rhs)?
             }
             Expr::BinOp(op, lhs, rhs) => {
                 let lhs = self.compile_expr(lhs)?;
