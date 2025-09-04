@@ -2,7 +2,7 @@ mod dyn_fn;
 mod expr;
 mod expr_parser;
 
-use std::any::TypeId;
+use std::{any::TypeId, collections::HashMap, marker::PhantomData};
 
 pub use dyn_fn::*;
 pub use expr::*;
@@ -12,54 +12,86 @@ pub trait ExprContext: 'static {
     fn field_getter(field_name: &str) -> Option<fn(&Self) -> f64>;
 }
 
-pub fn compile_expr<Ctx: ExprContext>(expr: &Expr) -> Result<DynFn, String> {
-    Ok(match expr {
-        &Expr::Int(val) => DynFn::new(move |_ctx: &Ctx| val as f64),
-        &Expr::Float(val) => DynFn::new(move |_ctx: &Ctx| val),
-        Expr::String(_string) => Err("Strings not supported")?,
-        Expr::Var(var_name) => {
-            let field_getter =
-                Ctx::field_getter(var_name).ok_or(format!("Unknown variable ${var_name}"))?;
-            DynFn::new(field_getter)
-        }
-        Expr::UnOp(op, rhs) => {
-            let rhs_dyn = compile_expr::<Ctx>(rhs)?;
-            if rhs_dyn.ret_type == TypeId::of::<f64>() {
-                let rhs = rhs_dyn
-                    .downcast::<Ctx, f64>()
-                    .ok_or("Compiler error: rhs type mismatch")?;
-                match op {
-                    UnOp::Neg => DynFn::new(move |ctx| -rhs(ctx)),
-                    UnOp::Plus => rhs_dyn,
-                }
-            } else {
-                Err("Unsupported unary operation")?
-            }
-        }
-        Expr::BinOp(op, lhs, rhs) => {
-            let lhs = compile_expr::<Ctx>(lhs)?;
-            let rhs = compile_expr::<Ctx>(rhs)?;
-            if lhs.ret_type == TypeId::of::<f64>() && rhs.ret_type == TypeId::of::<f64>() {
-                let lhs = lhs
-                    .downcast::<Ctx, f64>()
-                    .ok_or("Compiler error: lhs type mismatch")?;
-                let rhs = rhs
-                    .downcast::<Ctx, f64>()
-                    .ok_or("Compiler error: rhs type mismatch")?;
+type BinOpKey = (BinOp, TypeId);
+type CompileBinOpFunc = Box<dyn Fn(DynFn, DynFn) -> Result<DynFn, String>>;
 
-                match op {
-                    BinOp::Add => DynFn::new(move |ctx| lhs(ctx) + rhs(ctx)),
-                    BinOp::Sub => DynFn::new(move |ctx| lhs(ctx) - rhs(ctx)),
-                    BinOp::Mul => DynFn::new(move |ctx| lhs(ctx) * rhs(ctx)),
-                    BinOp::Div => DynFn::new(move |ctx| lhs(ctx) / rhs(ctx)),
-                }
-            } else {
-                Err("Unsupported binary operation")?
+pub struct Compiler<Ctx> {
+    binary_operations: HashMap<BinOpKey, CompileBinOpFunc>,
+    ctx_type: PhantomData<Ctx>,
+}
+
+impl<Ctx: ExprContext> Default for Compiler<Ctx> {
+    fn default() -> Self {
+        let mut compiler = Self {
+            binary_operations: HashMap::new(),
+            ctx_type: PhantomData,
+        };
+
+        compiler.register_bin_op(BinOp::Add, |lhs: f64, rhs: f64| lhs + rhs);
+        compiler.register_bin_op(BinOp::Sub, |lhs: f64, rhs: f64| lhs - rhs);
+        compiler.register_bin_op(BinOp::Mul, |lhs: f64, rhs: f64| lhs * rhs);
+        compiler.register_bin_op(BinOp::Div, |lhs: f64, rhs: f64| lhs / rhs);
+
+        compiler
+    }
+}
+
+impl<Ctx: ExprContext> Compiler<Ctx> {
+    fn register_bin_op<T: 'static>(&mut self, op: BinOp, bin_op_fn: fn(T, T) -> T) {
+        let key = (op, TypeId::of::<T>());
+        let compile_func = Box::new(move |lhs: DynFn, rhs: DynFn| -> Result<DynFn, String> {
+            let lhs = lhs
+                .downcast::<Ctx, T>()
+                .ok_or("Compiler error: lhs type mistmatch")?;
+            let rhs = rhs
+                .downcast::<Ctx, T>()
+                .ok_or("Compiler error: rhs type mistmatch")?;
+            Ok(DynFn::new(move |ctx| bin_op_fn(lhs(ctx), rhs(ctx))))
+        });
+        self.binary_operations.insert(key, compile_func);
+    }
+
+    pub fn compile_expr(&self, expr: &Expr) -> Result<DynFn, String> {
+        Ok(match expr {
+            &Expr::Int(val) => DynFn::new(move |_ctx: &Ctx| val as f64),
+            &Expr::Float(val) => DynFn::new(move |_ctx: &Ctx| val),
+            Expr::String(_string) => Err("Strings not supported")?,
+            Expr::Var(var_name) => {
+                let field_getter =
+                    Ctx::field_getter(var_name).ok_or(format!("Unknown variable ${var_name}"))?;
+                DynFn::new(field_getter)
             }
-        }
-        Expr::FieldAccess(_object, _field_name) => Err("Field access not supported")?,
-        Expr::FuncCall(_function, _arguments) => Err("Function calls not supported")?,
-    })
+            Expr::UnOp(op, rhs) => {
+                let rhs_dyn = self.compile_expr(rhs)?;
+                if rhs_dyn.ret_type == TypeId::of::<f64>() {
+                    let rhs = rhs_dyn
+                        .downcast::<Ctx, f64>()
+                        .ok_or("Compiler error: rhs type mismatch")?;
+                    match op {
+                        UnOp::Neg => DynFn::new(move |ctx| -rhs(ctx)),
+                        UnOp::Plus => rhs_dyn,
+                    }
+                } else {
+                    Err("Unsupported unary operation")?
+                }
+            }
+            Expr::BinOp(op, lhs, rhs) => {
+                let lhs = self.compile_expr(lhs)?;
+                let rhs = self.compile_expr(rhs)?;
+                if lhs.ret_type != rhs.ret_type {
+                    Err("Different types of operands are not supported for binary operators")?
+                }
+
+                let Some(compile_bin_op) = self.binary_operations.get(&(*op, lhs.ret_type)) else {
+                    Err("Unsupported binary operation")?
+                };
+
+                compile_bin_op(lhs, rhs)?
+            }
+            Expr::FieldAccess(_object, _field_name) => Err("Field access not supported")?,
+            Expr::FuncCall(_function, _arguments) => Err("Function calls not supported")?,
+        })
+    }
 }
 
 pub fn eval<Ctx: ExprContext>(input: &str, ctx: &Ctx) -> Result<f64, String> {
@@ -73,7 +105,9 @@ pub fn eval<Ctx: ExprContext>(input: &str, ctx: &Ctx) -> Result<f64, String> {
         Err(format!("Error parsing expression: {}", errors))?;
     }
 
-    let compiled_expr = compile_expr::<Ctx>(expr.output().unwrap())?
+    let compiler = Compiler::<Ctx>::default();
+    let compiled_expr = compiler
+        .compile_expr(expr.output().unwrap())?
         .downcast::<Ctx, f64>()
         .ok_or("compiled function was of wrong type")?;
     Ok(compiled_expr(ctx))
