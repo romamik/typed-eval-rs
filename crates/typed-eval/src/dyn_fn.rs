@@ -1,13 +1,15 @@
 use std::{
     any::{Any, TypeId},
     ops::Deref,
+    rc::Rc,
 };
 
 // the function with a dynamically known type
+#[derive(Clone)]
 pub struct DynFn {
     pub arg_type: TypeId,
     pub ret_type: TypeId,
-    boxed_fun: Box<dyn Any>,
+    boxed_fun: Rc<dyn Any>,
 }
 
 impl DynFn {
@@ -17,7 +19,7 @@ impl DynFn {
         Ret: 'static,
     {
         Self {
-            boxed_fun: Box::new(BoxedFn(Box::new(f))),
+            boxed_fun: Rc::new(BoxedFn(Box::new(f))),
             arg_type: TypeId::of::<Arg>(),
             ret_type: TypeId::of::<Ret>(),
         }
