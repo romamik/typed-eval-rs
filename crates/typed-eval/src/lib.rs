@@ -2,7 +2,7 @@ mod dyn_fn;
 mod expr;
 mod expr_parser;
 
-use std::{any::TypeId, collections::HashMap, hash::Hash, marker::PhantomData};
+use std::{any::TypeId, collections::HashMap, marker::PhantomData};
 
 pub use dyn_fn::*;
 pub use expr::*;

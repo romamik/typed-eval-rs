@@ -1,16 +1,13 @@
 use std::{
     any::{Any, TypeId},
     ops::Deref,
-    rc::Rc,
 };
 
 // the function with a dynamically known type
-#[derive(Clone)]
 pub struct DynFn {
     pub arg_type: TypeId,
     pub ret_type: TypeId,
-    // TODO: make DynFn clonable without using Rc
-    boxed_fun: Rc<dyn Any>,
+    boxed_fun: Box<dyn ClonableAny>,
 }
 
 impl DynFn {
@@ -20,7 +17,7 @@ impl DynFn {
         Ret: 'static,
     {
         Self {
-            boxed_fun: Rc::new(BoxedFn(Box::new(f))),
+            boxed_fun: Box::new(BoxedFn(Box::new(f))),
             arg_type: TypeId::of::<Arg>(),
             ret_type: TypeId::of::<Ret>(),
         }
@@ -31,7 +28,16 @@ impl DynFn {
         Arg: 'static,
         Ret: 'static,
     {
-        self.boxed_fun.downcast_ref().cloned()
+        self.boxed_fun.as_any().downcast_ref().cloned()
+    }
+}
+
+impl Clone for DynFn {
+    fn clone(&self) -> Self {
+        DynFn {
+            boxed_fun: self.boxed_fun.clone_box(),
+            ..*self
+        }
     }
 }
 
@@ -49,6 +55,20 @@ impl<Arg, Ret> Deref for BoxedFn<Arg, Ret> {
     type Target = Box<dyn ClonableFn<Arg, Ret>>;
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+trait ClonableAny: Any {
+    fn clone_box(&self) -> Box<dyn ClonableAny>;
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl<T: Any + Clone> ClonableAny for T {
+    fn clone_box(&self) -> Box<dyn ClonableAny> {
+        Box::new(self.clone())
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
