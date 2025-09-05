@@ -85,3 +85,22 @@ where
         BoxedFn(Box::new(self.clone()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dyn_fn() {
+        // here we construct a function that takes an (i32,i32) tuple and returns the first part
+        // but the type of the variable just DynFn, no mention of tuples and i32
+        let dyn_fn = DynFn::new(|a: &(i32, i32)| a.0);
+
+        // here we get back to the callable function with known types
+        // but for that we need to know exact types at compile time
+        let concrete_fn = dyn_fn.downcast::<(i32, i32), i32>().unwrap();
+
+        // and here we call the downcasted function to test if it really works as intended
+        assert_eq!((concrete_fn)(&(10, 20)), 10);
+    }
+}
