@@ -17,14 +17,17 @@ thread_local! {
 struct ExprParser;
 
 impl Cached for ExprParser {
-    type Parser<'src> = Box<dyn Parser<'src, &'src str, Expr, extra::Err<Rich<'src, char>>> + 'src>;
+    type Parser<'src> = Box<
+        dyn Parser<'src, &'src str, Expr, extra::Err<Rich<'src, char>>> + 'src,
+    >;
 
     fn make_parser<'src>(self) -> Self::Parser<'src> {
         Box::new(expr_parser())
     }
 }
 
-fn expr_parser<'src>() -> impl Parser<'src, &'src str, Expr, extra::Err<Rich<'src, char>>> {
+fn expr_parser<'src>()
+-> impl Parser<'src, &'src str, Expr, extra::Err<Rich<'src, char>>> {
     recursive(|expr| {
         let num = text::int(10)
             .then(just('.').then(text::int(10).or_not()).or_not())
@@ -68,7 +71,9 @@ fn expr_parser<'src>() -> impl Parser<'src, &'src str, Expr, extra::Err<Rich<'sr
 
         let field_access = atom.foldl(
             just('.').ignore_then(text::ident()).repeated(),
-            |lhs, field: &str| Expr::FieldAccess(Box::new(lhs), field.to_string()),
+            |lhs, field: &str| {
+                Expr::FieldAccess(Box::new(lhs), field.to_string())
+            },
         );
 
         let func_call = field_access
@@ -156,7 +161,10 @@ mod tests {
             parse_ok(r#" "\" world\"" "#),
             Expr::String("\" world\"".into())
         );
-        assert_eq!(parse_ok(r#" "\n\r\t\\" "#), Expr::String("\n\r\t\\".into()));
+        assert_eq!(
+            parse_ok(r#" "\n\r\t\\" "#),
+            Expr::String("\n\r\t\\".into())
+        );
     }
 
     #[test]
@@ -197,7 +205,11 @@ mod tests {
         let expr = parse_ok("1 + 2");
         assert_eq!(
             expr,
-            Expr::BinOp(BinOp::Add, Box::new(Expr::Int(1)), Box::new(Expr::Int(2)),)
+            Expr::BinOp(
+                BinOp::Add,
+                Box::new(Expr::Int(1)),
+                Box::new(Expr::Int(2)),
+            )
         );
 
         let expr2 = parse_ok("3 * 4 + 5");
@@ -243,7 +255,10 @@ mod tests {
         let expr2 = parse_ok("bar(42)");
         assert_eq!(
             expr2,
-            Expr::FuncCall(Box::new(Expr::Var("bar".to_string())), vec![Expr::Int(42)])
+            Expr::FuncCall(
+                Box::new(Expr::Var("bar".to_string())),
+                vec![Expr::Int(42)]
+            )
         );
 
         // Function call with multiple arguments
