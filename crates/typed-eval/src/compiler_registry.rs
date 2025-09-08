@@ -18,6 +18,9 @@ type CompileBinOpFunc = Box<dyn Fn(DynFn, DynFn) -> Result<DynFn, String>>;
 type FieldAccessKey = (TypeId, &'static str);
 type FieldAccessFunc = Box<dyn Fn(DynFn) -> Result<DynFn, String>>;
 
+// Registry access is needed to prevent calling
+// calling SupportedType::register()
+// without calling registry.register_type()
 pub struct RegistryAccess<'a, Ctx, T> {
     registry: &'a mut CompilerRegistry<Ctx>,
     ty: PhantomData<T>,
