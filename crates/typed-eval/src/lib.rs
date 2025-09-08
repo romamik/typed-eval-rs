@@ -75,6 +75,8 @@ mod tests {
                     ctx.user.clone()
                 })?;
 
+            registry.register_type::<i64>()?;
+            registry.register_type::<f64>()?;
             registry.register_type::<Rc<User>>()?;
 
             Ok(())
