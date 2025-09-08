@@ -26,18 +26,30 @@ pub fn eval<Ctx: ExprContext>(input: &str, ctx: &Ctx) -> Result<f64, String> {
 
 #[cfg(test)]
 mod tests {
+
+    use std::rc::Rc;
+
     use crate::*;
 
+    struct User {
+        name: String,
+        age: i64,
+    }
+
     struct TestContext {
-        foo: f64,
+        foo: i64,
         bar: f64,
+        user: Rc<User>,
     }
 
     impl ExprContext for TestContext {
-        fn field_getter(field_name: &str) -> Option<fn(&Self) -> f64> {
+        fn field_getter(field_name: &str) -> Option<DynFn> {
             match field_name {
-                "foo" => Some(|ctx: &TestContext| ctx.foo),
-                "bar" => Some(|ctx: &TestContext| ctx.bar),
+                "foo" => Some(DynFn::new(|ctx: &TestContext| ctx.foo.clone())),
+                "bar" => Some(DynFn::new(|ctx: &TestContext| ctx.bar.clone())),
+                "user" => {
+                    Some(DynFn::new(|ctx: &TestContext| ctx.user.clone()))
+                }
                 _ => None,
             }
         }
@@ -45,11 +57,19 @@ mod tests {
 
     #[test]
     fn test_eval() {
-        let ctx = TestContext { foo: 1.0, bar: 2.5 };
+        let ctx = TestContext {
+            foo: 1,
+            bar: 2.5,
+            user: Rc::new(User {
+                name: "John Doe".to_string(),
+                age: 45,
+            }),
+        };
+
         assert_eq!(eval("(1 + 2) * 3", &ctx), Ok((1.0 + 2.0) * 3.0));
         assert_eq!(
             eval("2 * (foo + bar)", &ctx),
-            Ok(2.0 * (ctx.foo + ctx.bar))
+            Ok(2.0 * (ctx.foo as f64 + ctx.bar))
         );
     }
 }

@@ -2,7 +2,8 @@ use crate::{BinOp, BoxedFn, DynFn, Expr, UnOp};
 use std::{any::TypeId, collections::HashMap, marker::PhantomData};
 
 pub trait ExprContext: 'static {
-    fn field_getter(field_name: &str) -> Option<fn(&Self) -> f64>;
+    // returns a function that takes Self as argument
+    fn field_getter(field_name: &str) -> Option<DynFn>;
 }
 
 type UnOpKey = (UnOp, TypeId);
@@ -14,10 +15,14 @@ type CompileBinOpFunc = Box<dyn Fn(DynFn, DynFn) -> Result<DynFn, String>>;
 type CastKey = (TypeId, TypeId);
 type CompileCastFunc = Box<dyn Fn(DynFn) -> Result<DynFn, String>>;
 
+type FieldAccessKey = (TypeId, &'static str);
+type FieldAccessFunc = Box<dyn Fn(DynFn) -> Result<DynFn, String>>;
+
 pub struct Compiler<Ctx> {
     casts: HashMap<CastKey, CompileCastFunc>,
     unary_operations: HashMap<UnOpKey, CompileUnOpFunc>,
     binary_operations: HashMap<BinOpKey, CompileBinOpFunc>,
+    field_access: HashMap<FieldAccessKey, FieldAccessFunc>,
     ctx_type: PhantomData<Ctx>,
 }
 
@@ -27,6 +32,7 @@ impl<Ctx: ExprContext> Default for Compiler<Ctx> {
             casts: HashMap::new(),
             unary_operations: HashMap::new(),
             binary_operations: HashMap::new(),
+            field_access: HashMap::new(),
             ctx_type: PhantomData,
         };
 
@@ -97,6 +103,22 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
         self.binary_operations.insert(key, compile_func);
     }
 
+    pub fn register_field_access<Obj: 'static, Field: 'static>(
+        &mut self,
+        field_name: &'static str,
+        field_getter: fn(&Obj) -> Field,
+    ) {
+        let key = (TypeId::of::<Obj>(), field_name);
+        let compile_func =
+            Box::new(move |obj: DynFn| -> Result<DynFn, String> {
+                let obj = obj
+                    .downcast::<Ctx, Obj>()
+                    .ok_or("Compiler error: obj type mistmatch")?;
+                Ok(DynFn::new(move |ctx| field_getter(&obj(ctx))))
+            });
+        self.field_access.insert(key, compile_func);
+    }
+
     // helper function that tries to cast expression to given type
     fn cast(&self, expr: DynFn, ty: TypeId) -> Result<DynFn, String> {
         if expr.ret_type == ty {
@@ -132,11 +154,8 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
             &Expr::Int(val) => DynFn::new(move |_ctx: &Ctx| val),
             &Expr::Float(val) => DynFn::new(move |_ctx: &Ctx| val),
             Expr::String(_string) => Err("Strings not supported")?,
-            Expr::Var(var_name) => {
-                let field_getter = Ctx::field_getter(var_name)
-                    .ok_or(format!("Unknown variable ${var_name}"))?;
-                DynFn::new(field_getter)
-            }
+            Expr::Var(var_name) => Ctx::field_getter(var_name)
+                .ok_or(format!("Unknown variable ${var_name}"))?,
             Expr::UnOp(op, rhs) => {
                 let rhs = self.compile_expr(rhs)?;
 
