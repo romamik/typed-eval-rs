@@ -50,24 +50,32 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
         Err("Cannot cast to same type".to_string())
     }
 
+    fn compile_field_access(
+        &self,
+        object: DynFn,
+        field_name: &str,
+    ) -> Result<DynFn, String> {
+        dbg!(object.ret_type, field_name);
+        dbg!(self.registry.field_access.keys().collect::<Vec<_>>());
+        let Some(compile_fn) = self
+            .registry
+            .field_access
+            .get(&(object.ret_type, field_name))
+        else {
+            Err(format!("No such field {field_name}"))?
+        };
+        compile_fn(object)
+    }
+
     pub fn compile_expr(&self, expr: &Expr) -> Result<DynFn, String> {
         Ok(match expr {
             &Expr::Int(val) => DynFn::new(move |_ctx: &Ctx| val),
             &Expr::Float(val) => DynFn::new(move |_ctx: &Ctx| val),
             Expr::String(_string) => Err("Strings not supported")?,
-            Expr::Var(var_name) => {
-                let Some(compile_field_access) = self
-                    .registry
-                    .field_access
-                    .get(&(TypeId::of::<Ctx>(), var_name))
-                else {
-                    Err(format!(
-                        "No field {var_name} on object {}",
-                        type_name::<Ctx>()
-                    ))?
-                };
-                compile_field_access(DynFn::new(|ctx: &Ctx| ctx.clone()))?
-            }
+            Expr::Var(var_name) => self.compile_field_access(
+                DynFn::new(|ctx: &Ctx| ctx.clone()),
+                var_name,
+            )?,
             Expr::UnOp(op, rhs) => {
                 let rhs = self.compile_expr(rhs)?;
 
@@ -93,8 +101,9 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
 
                 compile_bin_op(lhs, rhs)?
             }
-            Expr::FieldAccess(_object, _field_name) => {
-                Err("Field access not supported")?
+            Expr::FieldAccess(object, field_name) => {
+                let object = self.compile_expr(object)?;
+                self.compile_field_access(object, field_name)?
             }
             Expr::FuncCall(_function, _arguments) => {
                 Err("Function calls not supported")?

@@ -65,6 +65,8 @@ mod tests {
             registry.register_field_access("user", |ctx: &Rc<TestContext>| {
                 ctx.user.clone()
             });
+
+            Rc::<User>::register(registry);
         }
     }
 
@@ -84,5 +86,7 @@ mod tests {
             eval("2 * (foo + bar)", &ctx),
             Ok(2.0 * (ctx.foo as f64 + ctx.bar))
         );
+
+        assert_eq!(eval("0.5 * user.age", &ctx), Ok(0.5 * ctx.user.age as f64));
     }
 }
