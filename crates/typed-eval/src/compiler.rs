@@ -1,5 +1,5 @@
 use crate::{BoxedFn, CompilerRegistry, DynFn, Expr, SupportedType};
-use std::any::{TypeId, type_name};
+use std::any::TypeId;
 
 pub struct Compiler<Ctx> {
     registry: CompilerRegistry<Ctx>,
@@ -10,10 +10,11 @@ impl<Ctx: SupportedType> Default for Compiler<Ctx> {
         let mut registry = CompilerRegistry::default();
 
         // register literal types
-        i64::register(&mut registry);
-        f64::register(&mut registry);
+        registry.register_type::<i64>();
+        registry.register_type::<f64>();
 
-        Ctx::register(&mut registry);
+        // register context type and all types referenced by it
+        registry.register_type::<Ctx>();
 
         Self { registry }
     }

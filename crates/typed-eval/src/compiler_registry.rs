@@ -1,5 +1,10 @@
 use crate::{BinOp, DynFn, SupportedType, UnOp};
-use std::{any::TypeId, collections::HashMap, marker::PhantomData};
+use std::{
+    any::TypeId,
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 type CastKey = (TypeId, TypeId);
 type CompileCastFunc = Box<dyn Fn(DynFn) -> Result<DynFn, String>>;
@@ -13,7 +18,26 @@ type CompileBinOpFunc = Box<dyn Fn(DynFn, DynFn) -> Result<DynFn, String>>;
 type FieldAccessKey = (TypeId, &'static str);
 type FieldAccessFunc = Box<dyn Fn(DynFn) -> Result<DynFn, String>>;
 
+pub struct RegistryAccess<'a, Ctx, T> {
+    registry: &'a mut CompilerRegistry<Ctx>,
+    ty: PhantomData<T>,
+}
+
+impl<'a, Ctx, T> Deref for RegistryAccess<'a, Ctx, T> {
+    type Target = CompilerRegistry<Ctx>;
+    fn deref(&self) -> &Self::Target {
+        self.registry
+    }
+}
+
+impl<'a, Ctx, T> DerefMut for RegistryAccess<'a, Ctx, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.registry
+    }
+}
+
 pub struct CompilerRegistry<Ctx> {
+    registered_types: HashSet<TypeId>,
     pub(crate) casts: HashMap<CastKey, CompileCastFunc>,
     pub(crate) unary_operations: HashMap<UnOpKey, CompileUnOpFunc>,
     pub(crate) binary_operations: HashMap<BinOpKey, CompileBinOpFunc>,
@@ -24,6 +48,7 @@ pub struct CompilerRegistry<Ctx> {
 impl<Ctx: SupportedType> Default for CompilerRegistry<Ctx> {
     fn default() -> Self {
         Self {
+            registered_types: HashSet::new(),
             casts: HashMap::new(),
             unary_operations: HashMap::new(),
             binary_operations: HashMap::new(),
@@ -34,6 +59,18 @@ impl<Ctx: SupportedType> Default for CompilerRegistry<Ctx> {
 }
 
 impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
+    pub fn register_type<T: SupportedType>(&mut self) {
+        let type_id = TypeId::of::<T>();
+        if self.registered_types.contains(&type_id) {
+            return;
+        }
+        self.registered_types.insert(type_id);
+        T::register(RegistryAccess {
+            registry: self,
+            ty: PhantomData,
+        });
+    }
+
     pub fn register_cast<From: 'static, To: 'static>(
         &mut self,
         cast_fn: fn(From) -> To,

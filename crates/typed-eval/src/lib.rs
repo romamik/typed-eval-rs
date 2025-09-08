@@ -39,7 +39,9 @@ mod tests {
     }
 
     impl SupportedType for Rc<User> {
-        fn register<Ctx: SupportedType>(registry: &mut CompilerRegistry<Ctx>) {
+        fn register<Ctx: SupportedType>(
+            mut registry: RegistryAccess<Ctx, Self>,
+        ) {
             registry.register_field_access("name", |ctx: &Rc<User>| {
                 ctx.name.clone()
             });
@@ -55,7 +57,9 @@ mod tests {
     }
 
     impl SupportedType for Rc<TestContext> {
-        fn register<Ctx: SupportedType>(registry: &mut CompilerRegistry<Ctx>) {
+        fn register<Ctx: SupportedType>(
+            mut registry: RegistryAccess<Ctx, Self>,
+        ) {
             registry.register_field_access("foo", |ctx: &Rc<TestContext>| {
                 ctx.foo.clone()
             });
@@ -66,7 +70,7 @@ mod tests {
                 ctx.user.clone()
             });
 
-            Rc::<User>::register(registry);
+            registry.register_type::<Rc<User>>();
         }
     }
 

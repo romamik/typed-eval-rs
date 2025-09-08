@@ -1,11 +1,11 @@
-use crate::{BinOp, CompilerRegistry, UnOp};
+use crate::{BinOp, RegistryAccess, UnOp};
 
 pub trait SupportedType: Clone + 'static {
-    fn register<Ctx: SupportedType>(registry: &mut CompilerRegistry<Ctx>);
+    fn register<Ctx: SupportedType>(registry: RegistryAccess<Ctx, Self>);
 }
 
 impl SupportedType for i64 {
-    fn register<Ctx: SupportedType>(registry: &mut CompilerRegistry<Ctx>) {
+    fn register<Ctx: SupportedType>(mut registry: RegistryAccess<Ctx, Self>) {
         registry.register_cast(|value: i64| value as f64);
 
         registry.register_bin_op(BinOp::Add, |lhs: i64, rhs: i64| lhs + rhs);
@@ -18,7 +18,7 @@ impl SupportedType for i64 {
 }
 
 impl SupportedType for f64 {
-    fn register<Ctx: SupportedType>(registry: &mut CompilerRegistry<Ctx>) {
+    fn register<Ctx: SupportedType>(mut registry: RegistryAccess<Ctx, Self>) {
         registry.register_bin_op(BinOp::Add, |lhs: f64, rhs: f64| lhs + rhs);
         registry.register_bin_op(BinOp::Sub, |lhs: f64, rhs: f64| lhs - rhs);
         registry.register_bin_op(BinOp::Mul, |lhs: f64, rhs: f64| lhs * rhs);
