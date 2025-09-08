@@ -1,7 +1,7 @@
 use crate::{BinOp, DynFn, SupportedType, UnOp};
 use std::{
     any::TypeId,
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, hash_map::Entry},
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
@@ -62,22 +62,23 @@ impl<Ctx: SupportedType> Default for CompilerRegistry<Ctx> {
 }
 
 impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
-    pub fn register_type<T: SupportedType>(&mut self) {
+    pub fn register_type<T: SupportedType>(&mut self) -> Result<(), String> {
         let type_id = TypeId::of::<T>();
         if self.registered_types.contains(&type_id) {
-            return;
+            return Ok(());
         }
         self.registered_types.insert(type_id);
         T::register(RegistryAccess {
             registry: self,
             ty: PhantomData,
-        });
+        })?;
+        Ok(())
     }
 
     pub fn register_cast<From: 'static, To: 'static>(
         &mut self,
         cast_fn: fn(From) -> To,
-    ) {
+    ) -> Result<(), String> {
         let key = (TypeId::of::<From>(), TypeId::of::<To>());
         let compile_func =
             Box::new(move |from: DynFn| -> Result<DynFn, String> {
@@ -86,14 +87,21 @@ impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
                     .ok_or("Compiler error: from type mistmatch")?;
                 Ok(DynFn::new(move |ctx| cast_fn(from(ctx))))
             });
-        self.casts.insert(key, compile_func);
+
+        match self.casts.entry(key) {
+            Entry::Occupied(_) => Err("Cast already exists")?,
+            Entry::Vacant(vacant) => {
+                vacant.insert(compile_func);
+            }
+        }
+        Ok(())
     }
 
     pub fn register_un_op<T: 'static>(
         &mut self,
         op: UnOp,
         un_op_fn: fn(T) -> T,
-    ) {
+    ) -> Result<(), String> {
         let key = (op, TypeId::of::<T>());
         let compile_func =
             Box::new(move |rhs: DynFn| -> Result<DynFn, String> {
@@ -102,14 +110,21 @@ impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
                     .ok_or("Compiler error: rhs type mistmatch")?;
                 Ok(DynFn::new(move |ctx| un_op_fn(rhs(ctx))))
             });
-        self.unary_operations.insert(key, compile_func);
+
+        match self.unary_operations.entry(key) {
+            Entry::Occupied(_) => Err("Unary operation already exists")?,
+            Entry::Vacant(vacant) => {
+                vacant.insert(compile_func);
+            }
+        }
+        Ok(())
     }
 
     pub fn register_bin_op<T: 'static>(
         &mut self,
         op: BinOp,
         bin_op_fn: fn(T, T) -> T,
-    ) {
+    ) -> Result<(), String> {
         let key = (op, TypeId::of::<T>());
         let compile_func =
             Box::new(move |lhs: DynFn, rhs: DynFn| -> Result<DynFn, String> {
@@ -121,14 +136,21 @@ impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
                     .ok_or("Compiler error: rhs type mistmatch")?;
                 Ok(DynFn::new(move |ctx| bin_op_fn(lhs(ctx), rhs(ctx))))
             });
-        self.binary_operations.insert(key, compile_func);
+
+        match self.binary_operations.entry(key) {
+            Entry::Occupied(_) => Err("Binary operation already exists")?,
+            Entry::Vacant(vacant) => {
+                vacant.insert(compile_func);
+            }
+        }
+        Ok(())
     }
 
     pub fn register_field_access<Obj: 'static, Field: 'static>(
         &mut self,
         field_name: &'static str,
         field_getter: fn(&Obj) -> Field,
-    ) {
+    ) -> Result<(), String> {
         let key = (TypeId::of::<Obj>(), field_name);
         let compile_func =
             Box::new(move |obj: DynFn| -> Result<DynFn, String> {
@@ -137,6 +159,13 @@ impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
                     .ok_or("Compiler error: obj type mistmatch")?;
                 Ok(DynFn::new(move |ctx| field_getter(&obj(ctx))))
             });
-        self.field_access.insert(key, compile_func);
+
+        match self.field_access.entry(key) {
+            Entry::Occupied(_) => Err("Field access already exists")?,
+            Entry::Vacant(vacant) => {
+                vacant.insert(compile_func);
+            }
+        }
+        Ok(())
     }
 }

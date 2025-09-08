@@ -23,7 +23,7 @@ pub fn eval<Ctx: SupportedType>(input: &str, ctx: &Ctx) -> Result<f64, String> {
         Err(format!("Error parsing expression: {}", errors))?;
     }
 
-    let compiler = Compiler::<Ctx>::default();
+    let compiler = Compiler::<Ctx>::new().unwrap();
     let compiled_expr = compiler.compile::<f64>(expr.output().unwrap())?;
     Ok(compiled_expr(ctx))
 }
@@ -41,12 +41,14 @@ mod tests {
     impl SupportedType for Rc<User> {
         fn register<Ctx: SupportedType>(
             mut registry: RegistryAccess<Ctx, Self>,
-        ) {
+        ) -> Result<(), String> {
             registry.register_field_access("name", |ctx: &Rc<User>| {
                 ctx.name.clone()
-            });
-            registry
-                .register_field_access("age", |ctx: &Rc<User>| ctx.age.clone());
+            })?;
+            registry.register_field_access("age", |ctx: &Rc<User>| {
+                ctx.age.clone()
+            })?;
+            Ok(())
         }
     }
 
@@ -59,18 +61,23 @@ mod tests {
     impl SupportedType for Rc<TestContext> {
         fn register<Ctx: SupportedType>(
             mut registry: RegistryAccess<Ctx, Self>,
-        ) {
-            registry.register_field_access("foo", |ctx: &Rc<TestContext>| {
-                ctx.foo.clone()
-            });
-            registry.register_field_access("bar", |ctx: &Rc<TestContext>| {
-                ctx.bar.clone()
-            });
-            registry.register_field_access("user", |ctx: &Rc<TestContext>| {
-                ctx.user.clone()
-            });
+        ) -> Result<(), String> {
+            registry
+                .register_field_access("foo", |ctx: &Rc<TestContext>| {
+                    ctx.foo.clone()
+                })?;
+            registry
+                .register_field_access("bar", |ctx: &Rc<TestContext>| {
+                    ctx.bar.clone()
+                })?;
+            registry
+                .register_field_access("user", |ctx: &Rc<TestContext>| {
+                    ctx.user.clone()
+                })?;
 
-            registry.register_type::<Rc<User>>();
+            registry.register_type::<Rc<User>>()?;
+
+            Ok(())
         }
     }
 

@@ -5,22 +5,20 @@ pub struct Compiler<Ctx> {
     registry: CompilerRegistry<Ctx>,
 }
 
-impl<Ctx: SupportedType> Default for Compiler<Ctx> {
-    fn default() -> Self {
+impl<Ctx: SupportedType> Compiler<Ctx> {
+    pub fn new() -> Result<Self, String> {
         let mut registry = CompilerRegistry::default();
 
         // register literal types
-        registry.register_type::<i64>();
-        registry.register_type::<f64>();
+        registry.register_type::<i64>()?;
+        registry.register_type::<f64>()?;
 
         // register context type and all types referenced by it
-        registry.register_type::<Ctx>();
+        registry.register_type::<Ctx>()?;
 
-        Self { registry }
+        Ok(Self { registry })
     }
-}
 
-impl<Ctx: SupportedType> Compiler<Ctx> {
     // helper function that tries to cast expression to given type
     fn cast(&self, expr: DynFn, ty: TypeId) -> Result<DynFn, String> {
         if expr.ret_type == ty {
