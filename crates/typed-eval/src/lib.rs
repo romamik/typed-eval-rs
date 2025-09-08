@@ -1,9 +1,11 @@
 mod compiler;
+mod compiler_registry;
 mod dyn_fn;
 mod expr;
 mod expr_parser;
 
 pub use compiler::*;
+pub use compiler_registry::*;
 pub use dyn_fn::*;
 pub use expr::*;
 pub use expr_parser::*;
