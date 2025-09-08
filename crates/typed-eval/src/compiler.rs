@@ -1,40 +1,25 @@
-use crate::{BinOp, BoxedFn, CompilerRegistry, DynFn, Expr, UnOp};
-use std::any::TypeId;
-
-pub trait ExprContext: 'static {
-    // returns a function that takes Self as argument
-    fn field_getter(field_name: &str) -> Option<DynFn>;
-}
+use crate::{BoxedFn, CompilerRegistry, DynFn, Expr, SupportedType};
+use std::any::{TypeId, type_name};
 
 pub struct Compiler<Ctx> {
     registry: CompilerRegistry<Ctx>,
 }
 
-impl<Ctx: ExprContext> Default for Compiler<Ctx> {
+impl<Ctx: SupportedType> Default for Compiler<Ctx> {
     fn default() -> Self {
         let mut registry = CompilerRegistry::default();
 
-        registry.register_cast(|value: i64| value as f64);
+        // register literal types
+        i64::register(&mut registry);
+        f64::register(&mut registry);
 
-        registry.register_bin_op(BinOp::Add, |lhs: i64, rhs: i64| lhs + rhs);
-        registry.register_bin_op(BinOp::Sub, |lhs: i64, rhs: i64| lhs - rhs);
-        registry.register_bin_op(BinOp::Mul, |lhs: i64, rhs: i64| lhs * rhs);
-        registry.register_bin_op(BinOp::Div, |lhs: i64, rhs: i64| lhs / rhs);
-        registry.register_un_op(UnOp::Neg, |rhs: i64| -rhs);
-        registry.register_un_op(UnOp::Plus, |rhs: i64| rhs);
-
-        registry.register_bin_op(BinOp::Add, |lhs: f64, rhs: f64| lhs + rhs);
-        registry.register_bin_op(BinOp::Sub, |lhs: f64, rhs: f64| lhs - rhs);
-        registry.register_bin_op(BinOp::Mul, |lhs: f64, rhs: f64| lhs * rhs);
-        registry.register_bin_op(BinOp::Div, |lhs: f64, rhs: f64| lhs / rhs);
-        registry.register_un_op(UnOp::Neg, |rhs: f64| -rhs);
-        registry.register_un_op(UnOp::Plus, |rhs: f64| rhs);
+        Ctx::register(&mut registry);
 
         Self { registry }
     }
 }
 
-impl<Ctx: ExprContext> Compiler<Ctx> {
+impl<Ctx: SupportedType> Compiler<Ctx> {
     // helper function that tries to cast expression to given type
     fn cast(&self, expr: DynFn, ty: TypeId) -> Result<DynFn, String> {
         if expr.ret_type == ty {
@@ -70,8 +55,19 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
             &Expr::Int(val) => DynFn::new(move |_ctx: &Ctx| val),
             &Expr::Float(val) => DynFn::new(move |_ctx: &Ctx| val),
             Expr::String(_string) => Err("Strings not supported")?,
-            Expr::Var(var_name) => Ctx::field_getter(var_name)
-                .ok_or(format!("Unknown variable ${var_name}"))?,
+            Expr::Var(var_name) => {
+                let Some(compile_field_access) = self
+                    .registry
+                    .field_access
+                    .get(&(TypeId::of::<Ctx>(), var_name))
+                else {
+                    Err(format!(
+                        "No field {var_name} on object {}",
+                        type_name::<Ctx>()
+                    ))?
+                };
+                compile_field_access(DynFn::new(|ctx: &Ctx| ctx.clone()))?
+            }
             Expr::UnOp(op, rhs) => {
                 let rhs = self.compile_expr(rhs)?;
 

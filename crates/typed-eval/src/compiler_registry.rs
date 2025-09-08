@@ -1,4 +1,4 @@
-use crate::{BinOp, DynFn, ExprContext, UnOp};
+use crate::{BinOp, DynFn, SupportedType, UnOp};
 use std::{any::TypeId, collections::HashMap, marker::PhantomData};
 
 type CastKey = (TypeId, TypeId);
@@ -21,7 +21,7 @@ pub struct CompilerRegistry<Ctx> {
     pub(crate) ctx_type: PhantomData<Ctx>,
 }
 
-impl<Ctx: ExprContext> Default for CompilerRegistry<Ctx> {
+impl<Ctx: SupportedType> Default for CompilerRegistry<Ctx> {
     fn default() -> Self {
         Self {
             casts: HashMap::new(),
@@ -33,7 +33,7 @@ impl<Ctx: ExprContext> Default for CompilerRegistry<Ctx> {
     }
 }
 
-impl<Ctx: ExprContext> CompilerRegistry<Ctx> {
+impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
     pub fn register_cast<From: 'static, To: 'static>(
         &mut self,
         cast_fn: fn(From) -> To,
