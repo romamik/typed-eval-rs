@@ -75,17 +75,21 @@ impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
         Ok(())
     }
 
-    pub fn register_cast<From: 'static, To: 'static>(
+    pub fn register_cast<From, To>(
         &mut self,
-        cast_fn: fn(From) -> To,
-    ) -> Result<(), String> {
+        cast_fn: for<'a> fn(&'a Ctx, From::RefType<'a>) -> To::RefType<'a>,
+    ) -> Result<(), String>
+    where
+        From: SupportedType,
+        To: SupportedType,
+    {
         let key = (TypeId::of::<From>(), TypeId::of::<To>());
         let compile_func =
             Box::new(move |from: DynFn| -> Result<DynFn, String> {
                 let from = from
                     .downcast::<Ctx, From>()
                     .ok_or("Compiler error: from type mistmatch")?;
-                Ok(DynFn::new(move |ctx| cast_fn(from(ctx))))
+                Ok(To::make_dyn_fn(move |ctx| cast_fn(ctx, from(ctx))))
             });
 
         match self.casts.entry(key) {
@@ -97,18 +101,21 @@ impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
         Ok(())
     }
 
-    pub fn register_un_op<T: 'static>(
+    pub fn register_un_op<T>(
         &mut self,
         op: UnOp,
-        un_op_fn: fn(T) -> T,
-    ) -> Result<(), String> {
+        un_op_fn: for<'a> fn(&'a Ctx, T::RefType<'a>) -> T::RefType<'a>,
+    ) -> Result<(), String>
+    where
+        T: SupportedType,
+    {
         let key = (op, TypeId::of::<T>());
         let compile_func =
             Box::new(move |rhs: DynFn| -> Result<DynFn, String> {
                 let rhs = rhs
                     .downcast::<Ctx, T>()
                     .ok_or("Compiler error: rhs type mistmatch")?;
-                Ok(DynFn::new(move |ctx| un_op_fn(rhs(ctx))))
+                Ok(T::make_dyn_fn(move |ctx| un_op_fn(ctx, rhs(ctx))))
             });
 
         match self.unary_operations.entry(key) {
@@ -120,11 +127,18 @@ impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
         Ok(())
     }
 
-    pub fn register_bin_op<T: 'static>(
+    pub fn register_bin_op<T>(
         &mut self,
         op: BinOp,
-        bin_op_fn: fn(T, T) -> T,
-    ) -> Result<(), String> {
+        bin_op_fn: for<'a> fn(
+            &'a Ctx,
+            T::RefType<'a>,
+            T::RefType<'a>,
+        ) -> T::RefType<'a>,
+    ) -> Result<(), String>
+    where
+        T: SupportedType,
+    {
         let key = (op, TypeId::of::<T>());
         let compile_func =
             Box::new(move |lhs: DynFn, rhs: DynFn| -> Result<DynFn, String> {
@@ -134,7 +148,9 @@ impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
                 let rhs = rhs
                     .downcast::<Ctx, T>()
                     .ok_or("Compiler error: rhs type mistmatch")?;
-                Ok(DynFn::new(move |ctx| bin_op_fn(lhs(ctx), rhs(ctx))))
+                Ok(T::make_dyn_fn(move |ctx| {
+                    bin_op_fn(ctx, lhs(ctx), rhs(ctx))
+                }))
             });
 
         match self.binary_operations.entry(key) {
@@ -146,18 +162,25 @@ impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
         Ok(())
     }
 
-    pub fn register_field_access<Obj: 'static, Field: 'static>(
+    pub fn register_field_access<Obj, Field>(
         &mut self,
         field_name: &'static str,
-        field_getter: fn(&Obj) -> Field,
-    ) -> Result<(), String> {
+        field_getter: for<'a> fn(
+            &'a Ctx,
+            Obj::RefType<'a>,
+        ) -> Field::RefType<'a>,
+    ) -> Result<(), String>
+    where
+        Obj: SupportedType,
+        Field: SupportedType,
+    {
         let key = (TypeId::of::<Obj>(), field_name);
         let compile_func =
             Box::new(move |obj: DynFn| -> Result<DynFn, String> {
                 let obj = obj
                     .downcast::<Ctx, Obj>()
                     .ok_or("Compiler error: obj type mistmatch")?;
-                Ok(DynFn::new(move |ctx| field_getter(&obj(ctx))))
+                Ok(Field::make_dyn_fn(move |ctx| field_getter(ctx, obj(ctx))))
             });
 
         match self.field_access.entry(key) {

@@ -5,7 +5,10 @@ pub struct Compiler<Ctx> {
     registry: CompilerRegistry<Ctx>,
 }
 
-impl<Ctx: SupportedType> Compiler<Ctx> {
+impl<Ctx> Compiler<Ctx>
+where
+    Ctx: for<'a> SupportedType<RefType<'a> = &'a Ctx>,
+{
     pub fn new() -> Result<Self, String> {
         let mut registry = CompilerRegistry::default();
 
@@ -66,11 +69,11 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
 
     pub fn compile_expr(&self, expr: &Expr) -> Result<DynFn, String> {
         Ok(match expr {
-            &Expr::Int(val) => DynFn::new(move |_ctx: &Ctx| val),
-            &Expr::Float(val) => DynFn::new(move |_ctx: &Ctx| val),
+            &Expr::Int(val) => DynFn::new::<_, i64>(move |_ctx: &Ctx| val),
+            &Expr::Float(val) => DynFn::new::<_, f64>(move |_ctx: &Ctx| val),
             Expr::String(_string) => Err("Strings not supported")?,
             Expr::Var(var_name) => self.compile_field_access(
-                DynFn::new(|ctx: &Ctx| ctx.clone()),
+                Ctx::make_dyn_fn(|ctx: &Ctx| ctx),
                 var_name,
             )?,
             Expr::UnOp(op, rhs) => {
@@ -108,7 +111,7 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
         })
     }
 
-    pub fn compile<Ret: 'static>(
+    pub fn compile<Ret: SupportedType>(
         &self,
         expr: &Expr,
     ) -> Result<BoxedFn<Ctx, Ret>, String> {
