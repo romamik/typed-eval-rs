@@ -12,10 +12,14 @@ pub use expr::*;
 pub use expr_parser::*;
 pub use supported_type::*;
 
-pub fn eval<Ctx: for<'a> SupportedType<RefType<'a> = &'a Ctx>>(
+pub fn eval<'a, Ctx, Ret>(
     input: &str,
-    ctx: &Ctx,
-) -> Result<f64, String> {
+    ctx: &'a Ctx,
+) -> Result<Ret::RefType<'a>, String>
+where
+    Ctx: ExprContext,
+    Ret: SupportedType,
+{
     let expr = parse_expr(input);
     if expr.has_errors() || !expr.has_output() {
         let errors = expr
@@ -27,7 +31,7 @@ pub fn eval<Ctx: for<'a> SupportedType<RefType<'a> = &'a Ctx>>(
     }
 
     let compiler = Compiler::<Ctx>::new().unwrap();
-    let compiled_expr = compiler.compile::<f64>(expr.output().unwrap())?;
+    let compiled_expr = compiler.compile::<Ret>(expr.output().unwrap())?;
     Ok(compiled_expr(ctx))
 }
 
@@ -35,6 +39,7 @@ pub fn eval<Ctx: for<'a> SupportedType<RefType<'a> = &'a Ctx>>(
 mod tests {
     use crate::*;
 
+    #[derive(Debug, PartialEq)]
     struct User {
         name: String,
         age: i64,
@@ -101,12 +106,18 @@ mod tests {
             },
         };
 
-        assert_eq!(eval("(1 + 2) * 3", &ctx), Ok((1.0 + 2.0) * 3.0));
+        assert_eq!(eval::<_, f64>("(1 + 2) * 3", &ctx), Ok((1.0 + 2.0) * 3.0));
         assert_eq!(
-            eval("2 * (foo + bar)", &ctx),
+            eval::<_, f64>("2 * (foo + bar)", &ctx),
             Ok(2.0 * (ctx.foo as f64 + ctx.bar))
         );
 
-        assert_eq!(eval("0.5 * user.age", &ctx), Ok(0.5 * ctx.user.age as f64));
+        assert_eq!(
+            eval::<_, f64>("0.5 * user.age", &ctx),
+            Ok(0.5 * ctx.user.age as f64)
+        );
+
+        let user: &User = eval::<_, User>("user", &ctx).unwrap();
+        assert_eq!(user, &ctx.user);
     }
 }

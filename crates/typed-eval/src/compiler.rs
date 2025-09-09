@@ -1,16 +1,24 @@
-use crate::{
-    BoxedFn, CompilerRegistry, DynFn, Expr, RegistryAccess, SupportedType,
-};
+use crate::{BoxedFn, CompilerRegistry, DynFn, Expr, SupportedType};
 use std::any::TypeId;
+
+pub trait ExprContext: SupportedType {
+    fn get_self_dyn_fn() -> DynFn;
+}
+
+impl<T> ExprContext for T
+where
+    T: for<'a> SupportedType<RefType<'a> = &'a T>,
+{
+    fn get_self_dyn_fn() -> DynFn {
+        T::make_dyn_fn(move |ctx| ctx)
+    }
+}
 
 pub struct Compiler<Ctx> {
     registry: CompilerRegistry<Ctx>,
 }
 
-impl<Ctx> Compiler<Ctx>
-where
-    Ctx: for<'a> SupportedType<RefType<'a> = &'a Ctx>,
-{
+impl<Ctx: ExprContext> Compiler<Ctx> {
     pub fn new() -> Result<Self, String> {
         let mut registry = CompilerRegistry::default();
 
@@ -74,10 +82,9 @@ where
             &Expr::Int(val) => DynFn::new::<_, i64>(move |_ctx: &Ctx| val),
             &Expr::Float(val) => DynFn::new::<_, f64>(move |_ctx: &Ctx| val),
             Expr::String(_string) => Err("Strings not supported")?,
-            Expr::Var(var_name) => self.compile_field_access(
-                Ctx::make_dyn_fn(|ctx: &Ctx| ctx),
-                var_name,
-            )?,
+            Expr::Var(var_name) => {
+                self.compile_field_access(Ctx::get_self_dyn_fn(), var_name)?
+            }
             Expr::UnOp(op, rhs) => {
                 let rhs = self.compile_expr(rhs)?;
 
