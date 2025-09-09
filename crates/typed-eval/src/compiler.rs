@@ -54,8 +54,6 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
         object: DynFn,
         field_name: &str,
     ) -> Result<DynFn, String> {
-        dbg!(object.ret_type, field_name);
-        dbg!(self.registry.field_access.keys().collect::<Vec<_>>());
         let Some(compile_fn) = self
             .registry
             .field_access
