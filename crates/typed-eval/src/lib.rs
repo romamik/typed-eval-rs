@@ -49,9 +49,9 @@ mod tests {
             //     "name",
             //     |_: &Ctx, obj: &User| obj.name.clone(),
             // )?;
-            registry.register_field_access::<Self, i64>(
+            registry.register_field_access::<i64>(
                 "age",
-                |_: &Ctx, obj: &User| obj.age.clone(),
+                |_: &Ctx, obj: &User| obj.age,
             )?;
             Ok(())
         }
@@ -69,15 +69,15 @@ mod tests {
         fn register<Ctx: SupportedType>(
             mut registry: RegistryAccess<Ctx, Self>,
         ) -> Result<(), String> {
-            registry.register_field_access::<Self, i64>(
+            registry.register_field_access::<i64>(
                 "foo",
                 |_: &Ctx, obj: &TestContext| obj.foo,
             )?;
-            registry.register_field_access::<Self, f64>(
+            registry.register_field_access::<f64>(
                 "bar",
                 |_: &Ctx, obj: &TestContext| obj.bar,
             )?;
-            registry.register_field_access::<Self, User>(
+            registry.register_field_access::<User>(
                 "user",
                 |_: &Ctx, obj: &TestContext| &obj.user,
             )?;

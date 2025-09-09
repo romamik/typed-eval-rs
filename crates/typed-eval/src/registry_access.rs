@@ -2,8 +2,8 @@ use crate::{BinOp, DynFn, SupportedType, UnOp};
 use std::{
     any::TypeId,
     collections::{HashMap, HashSet, hash_map::Entry},
-    hash::Hash,
     marker::PhantomData,
+    ops::{Deref, DerefMut},
 };
 
 type CastKey = (TypeId, TypeId);
@@ -18,17 +18,25 @@ type CompileBinOpFunc = Box<dyn Fn(DynFn, DynFn) -> Result<DynFn, String>>;
 type FieldAccessKey = (TypeId, &'static str);
 type FieldAccessFunc = Box<dyn Fn(DynFn) -> Result<DynFn, String>>;
 
-// Registry access is passed to SupportedType::register()
-// instead of just passing CompilerRegistry
-//
-// * it prevents calling SupportedType::register() directly, without using register_type()
-// * it already has T type parameter that is needed for most of functions
-pub struct RegistryAccess<'r, Ctx, T> {
-    registry: &'r mut CompilerRegistry<Ctx>,
+pub struct RegistryAccess<'a, Ctx, T> {
+    registry: &'a mut CompilerRegistry<Ctx>,
     ty: PhantomData<T>,
 }
 
-pub(crate) struct CompilerRegistry<Ctx> {
+impl<'a, Ctx, T> Deref for RegistryAccess<'a, Ctx, T> {
+    type Target = CompilerRegistry<Ctx>;
+    fn deref(&self) -> &Self::Target {
+        self.registry
+    }
+}
+
+impl<'a, Ctx, T> DerefMut for RegistryAccess<'a, Ctx, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.registry
+    }
+}
+
+pub struct CompilerRegistry<Ctx> {
     registered_types: HashSet<TypeId>,
     pub(crate) casts: HashMap<CastKey, CompileCastFunc>,
     pub(crate) unary_operations: HashMap<UnOpKey, CompileUnOpFunc>,
@@ -63,38 +71,41 @@ impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
         })?;
         Ok(())
     }
-}
 
-impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
-    pub fn register_type<T2: SupportedType>(&mut self) -> Result<(), String> {
-        self.registry.register_type::<T2>()
-    }
-
-    // cast from T to To
-    pub fn register_cast<To>(
+    pub fn register_cast<From, To>(
         &mut self,
-        cast_fn: for<'a> fn(&'a Ctx, T::RefType<'a>) -> To::RefType<'a>,
+        cast_fn: for<'a> fn(&'a Ctx, From::RefType<'a>) -> To::RefType<'a>,
     ) -> Result<(), String>
     where
+        From: SupportedType,
         To: SupportedType,
     {
-        let key = (TypeId::of::<T>(), TypeId::of::<To>());
+        let key = (TypeId::of::<From>(), TypeId::of::<To>());
         let compile_func =
             Box::new(move |from: DynFn| -> Result<DynFn, String> {
                 let from = from
-                    .downcast::<Ctx, T>()
+                    .downcast::<Ctx, From>()
                     .ok_or("Compiler error: from type mistmatch")?;
                 Ok(To::make_dyn_fn(move |ctx| cast_fn(ctx, from(ctx))))
             });
 
-        try_insert(&mut self.registry.casts, key, compile_func)
+        match self.casts.entry(key) {
+            Entry::Occupied(_) => Err("Cast already exists")?,
+            Entry::Vacant(vacant) => {
+                vacant.insert(compile_func);
+            }
+        }
+        Ok(())
     }
 
-    pub fn register_un_op(
+    pub fn register_un_op<T>(
         &mut self,
         op: UnOp,
         un_op_fn: for<'a> fn(&'a Ctx, T::RefType<'a>) -> T::RefType<'a>,
-    ) -> Result<(), String> {
+    ) -> Result<(), String>
+    where
+        T: SupportedType,
+    {
         let key = (op, TypeId::of::<T>());
         let compile_func =
             Box::new(move |rhs: DynFn| -> Result<DynFn, String> {
@@ -104,10 +115,16 @@ impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
                 Ok(T::make_dyn_fn(move |ctx| un_op_fn(ctx, rhs(ctx))))
             });
 
-        try_insert(&mut self.registry.unary_operations, key, compile_func)
+        match self.unary_operations.entry(key) {
+            Entry::Occupied(_) => Err("Unary operation already exists")?,
+            Entry::Vacant(vacant) => {
+                vacant.insert(compile_func);
+            }
+        }
+        Ok(())
     }
 
-    pub fn register_bin_op(
+    pub fn register_bin_op<T>(
         &mut self,
         op: BinOp,
         bin_op_fn: for<'a> fn(
@@ -115,7 +132,10 @@ impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
             T::RefType<'a>,
             T::RefType<'a>,
         ) -> T::RefType<'a>,
-    ) -> Result<(), String> {
+    ) -> Result<(), String>
+    where
+        T: SupportedType,
+    {
         let key = (op, TypeId::of::<T>());
         let compile_func =
             Box::new(move |lhs: DynFn, rhs: DynFn| -> Result<DynFn, String> {
@@ -130,44 +150,42 @@ impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
                 }))
             });
 
-        try_insert(&mut self.registry.binary_operations, key, compile_func)
+        match self.binary_operations.entry(key) {
+            Entry::Occupied(_) => Err("Binary operation already exists")?,
+            Entry::Vacant(vacant) => {
+                vacant.insert(compile_func);
+            }
+        }
+        Ok(())
     }
 
-    // access field on type T
-    pub fn register_field_access<Field>(
+    pub fn register_field_access<Obj, Field>(
         &mut self,
         field_name: &'static str,
-        field_getter: for<'a> fn(&'a Ctx, T::RefType<'a>) -> Field::RefType<'a>,
+        field_getter: for<'a> fn(
+            &'a Ctx,
+            Obj::RefType<'a>,
+        ) -> Field::RefType<'a>,
     ) -> Result<(), String>
     where
+        Obj: SupportedType,
         Field: SupportedType,
     {
-        let key = (TypeId::of::<T>(), field_name);
+        let key = (TypeId::of::<Obj>(), field_name);
         let compile_func =
             Box::new(move |obj: DynFn| -> Result<DynFn, String> {
                 let obj = obj
-                    .downcast::<Ctx, T>()
+                    .downcast::<Ctx, Obj>()
                     .ok_or("Compiler error: obj type mistmatch")?;
                 Ok(Field::make_dyn_fn(move |ctx| field_getter(ctx, obj(ctx))))
             });
 
-        try_insert(&mut self.registry.field_access, key, compile_func)
-    }
-}
-
-fn try_insert<K, V>(
-    map: &mut HashMap<K, V>,
-    key: K,
-    value: V,
-) -> Result<(), String>
-where
-    K: Hash + Eq,
-{
-    match map.entry(key) {
-        Entry::Occupied(_) => Err("Already exists")?,
-        Entry::Vacant(vacant) => {
-            vacant.insert(value);
+        match self.field_access.entry(key) {
+            Entry::Occupied(_) => Err("Field access already exists")?,
+            Entry::Vacant(vacant) => {
+                vacant.insert(compile_func);
+            }
         }
+        Ok(())
     }
-    Ok(())
 }

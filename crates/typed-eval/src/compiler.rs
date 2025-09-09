@@ -1,4 +1,6 @@
-use crate::{BoxedFn, CompilerRegistry, DynFn, Expr, SupportedType};
+use crate::{
+    BoxedFn, CompilerRegistry, DynFn, Expr, RegistryAccess, SupportedType,
+};
 use std::any::TypeId;
 
 pub struct Compiler<Ctx> {
