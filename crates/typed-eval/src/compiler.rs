@@ -1,5 +1,5 @@
 use crate::{BoxedFn, CompilerRegistry, DynFn, Expr, SupportedType};
-use std::any::TypeId;
+use std::{any::TypeId, marker::PhantomData};
 
 pub trait ExprContext: SupportedType {
     fn get_self_dyn_fn() -> DynFn;
@@ -15,7 +15,8 @@ where
 }
 
 pub struct Compiler<Ctx> {
-    registry: CompilerRegistry<Ctx>,
+    registry: CompilerRegistry,
+    ctx_ty: PhantomData<Ctx>,
 }
 
 impl<Ctx: ExprContext> Compiler<Ctx> {
@@ -23,13 +24,16 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
         let mut registry = CompilerRegistry::default();
 
         // register literal types
-        registry.register_type::<i64>()?;
-        registry.register_type::<f64>()?;
+        registry.register_type::<Ctx, i64>()?;
+        registry.register_type::<Ctx, f64>()?;
 
         // register context type and all types referenced by it
-        registry.register_type::<Ctx>()?;
+        registry.register_type::<Ctx, Ctx>()?;
 
-        Ok(Self { registry })
+        Ok(Self {
+            registry,
+            ctx_ty: PhantomData,
+        })
     }
 
     // helper function that tries to cast expression to given type
@@ -88,7 +92,7 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
             method_name,
             arguments.iter().map(|arg| arg.ret_type).collect::<Vec<_>>(),
         )) else {
-            Err(format!("No such method"))?
+            Err("No such method".to_string())?
         };
         compile_fn(object, arguments)
     }

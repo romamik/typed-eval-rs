@@ -27,42 +27,30 @@ type MethodCallFunc = Box<dyn Fn(DynFn, Vec<DynFn>) -> Result<DynFn, String>>;
 // * it prevents calling SupportedType::register() directly, without using register_type()
 // * it already has T type parameter that is needed for most of functions
 pub struct RegistryAccess<'r, Ctx, T> {
-    pub(super) registry: &'r mut CompilerRegistry<Ctx>,
-    ty: PhantomData<T>,
+    pub(super) registry: &'r mut CompilerRegistry,
+    ty: PhantomData<(Ctx, T)>,
 }
 
-pub(crate) struct CompilerRegistry<Ctx> {
+#[derive(Default)]
+pub(crate) struct CompilerRegistry {
     registered_types: HashSet<TypeId>,
     pub(crate) casts: HashMap<CastKey, CompileCastFunc>,
     pub(crate) unary_operations: HashMap<UnOpKey, CompileUnOpFunc>,
     pub(crate) binary_operations: HashMap<BinOpKey, CompileBinOpFunc>,
     pub(crate) field_access: HashMap<FieldAccessKey, FieldAccessFunc>,
     pub(crate) method_calls: HashMap<MethodCallKey, MethodCallFunc>,
-    pub(crate) ctx_type: PhantomData<Ctx>,
 }
 
-impl<Ctx: SupportedType> Default for CompilerRegistry<Ctx> {
-    fn default() -> Self {
-        Self {
-            registered_types: HashSet::new(),
-            casts: HashMap::new(),
-            unary_operations: HashMap::new(),
-            binary_operations: HashMap::new(),
-            field_access: HashMap::new(),
-            method_calls: HashMap::new(),
-            ctx_type: PhantomData,
-        }
-    }
-}
-
-impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
-    pub fn register_type<T: SupportedType>(&mut self) -> Result<(), String> {
+impl CompilerRegistry {
+    pub fn register_type<Ctx: SupportedType, T: SupportedType>(
+        &mut self,
+    ) -> Result<(), String> {
         let type_id = TypeId::of::<T>();
         if self.registered_types.contains(&type_id) {
             return Ok(());
         }
         self.registered_types.insert(type_id);
-        T::register(RegistryAccess {
+        T::register(RegistryAccess::<Ctx, T> {
             registry: self,
             ty: PhantomData,
         })?;
@@ -72,7 +60,7 @@ impl<Ctx: SupportedType> CompilerRegistry<Ctx> {
 
 impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
     pub fn register_type<T2: SupportedType>(&mut self) -> Result<(), String> {
-        self.registry.register_type::<T2>()
+        self.registry.register_type::<Ctx, T2>()
     }
 
     // cast from T to To
