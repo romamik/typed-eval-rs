@@ -80,10 +80,7 @@ mod tests {
                 |_: &Ctx, obj: &User| obj.age,
             )?;
 
-            registry.register_method_call::<(), i64>(
-                "get_age",
-                CompileMethod0Args(|_, user: &Self| user.get_age()),
-            )?;
+            registry.register_method_call_0::<i64>("get_age", Self::get_age)?;
 
             registry.register_method_call::<i64, i64>(
                 "get_age_multiplied",

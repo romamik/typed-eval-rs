@@ -6,6 +6,8 @@ use std::{
     marker::PhantomData,
 };
 
+mod method_calls;
+
 type CastKey = (TypeId, TypeId);
 type CompileCastFunc = Box<dyn Fn(DynFn) -> Result<DynFn, String>>;
 

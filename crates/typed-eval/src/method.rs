@@ -1,5 +1,5 @@
-use crate::{DynFn, SupportedType};
-use std::any::TypeId;
+use crate::{CompilerRegistry, DynFn, RegistryAccess, SupportedType};
+use std::{any::TypeId, rc::Rc};
 
 pub trait CompileMethod<Ctx, O, A, R>: 'static {
     fn get_arg_types(&self) -> Vec<TypeId>;
@@ -7,17 +7,15 @@ pub trait CompileMethod<Ctx, O, A, R>: 'static {
     -> Result<DynFn, String>;
 }
 
-pub struct CompileMethod0Args<Ctx, Obj, Ret>(
-    pub for<'a> fn(&'a Ctx, Obj::RefType<'a>) -> Ret::RefType<'a>,
-)
+pub struct CompileMethod0Args<Obj, Ret>(pub fn(&Obj) -> Ret::RefType<'_>)
 where
-    Obj: SupportedType,
+    Obj: for<'a> SupportedType<RefType<'a> = &'a Obj>,
     Ret: SupportedType;
 
-impl<Ctx, O, R> CompileMethod<Ctx, O, (), R> for CompileMethod0Args<Ctx, O, R>
+impl<Ctx, O, R> CompileMethod<Ctx, O, (), R> for CompileMethod0Args<O, R>
 where
     Ctx: 'static,
-    O: SupportedType,
+    O: for<'a> SupportedType<RefType<'a> = &'a O>,
     R: SupportedType,
 {
     fn get_arg_types(&self) -> Vec<TypeId> {
@@ -40,7 +38,38 @@ where
             .downcast::<Ctx, O>()
             .ok_or("Failed to downcast object".to_string())?;
         let method = self.0;
-        Ok(R::make_dyn_fn(move |ctx| (method)(ctx, object(ctx))))
+        Ok(R::make_dyn_fn(move |ctx| (method)(object(ctx))))
+    }
+}
+
+impl<Ctx, O, R> CompileMethod<Ctx, O, (), R>
+    for for<'a> fn(&'a O) -> R::RefType<'a>
+where
+    Ctx: 'static,
+    O: for<'a> SupportedType<RefType<'a> = &'a O>,
+    R: SupportedType,
+{
+    fn get_arg_types(&self) -> Vec<TypeId> {
+        vec![]
+    }
+
+    fn compile(
+        &self,
+        object: DynFn,
+        #[allow(unused_mut)] mut args: Vec<DynFn>,
+    ) -> Result<DynFn, String> {
+        let expected_arg_count = 0;
+        if args.len() != expected_arg_count {
+            return Err(format!(
+                "Expected {expected_arg_count} arguments, got {}",
+                args.len()
+            ));
+        }
+        let object = object
+            .downcast::<Ctx, O>()
+            .ok_or("Failed to downcast object".to_string())?;
+        let method = *self;
+        Ok(R::make_dyn_fn(move |ctx| (method)(object(ctx))))
     }
 }
 
