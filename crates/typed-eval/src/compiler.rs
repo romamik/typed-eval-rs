@@ -77,6 +77,22 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
         compile_fn(object)
     }
 
+    fn compile_method_call(
+        &self,
+        object: DynFn,
+        method_name: &str,
+        arguments: Vec<DynFn>,
+    ) -> Result<DynFn, String> {
+        let Some(compile_fn) = self.registry.method_calls.get(&(
+            object.ret_type,
+            method_name,
+            arguments.iter().map(|arg| arg.ret_type).collect::<Vec<_>>(),
+        )) else {
+            Err(format!("No such method"))?
+        };
+        compile_fn(object, arguments)
+    }
+
     pub fn compile_expr(&self, expr: &Expr) -> Result<DynFn, String> {
         Ok(match expr {
             &Expr::Int(val) => DynFn::new::<_, i64>(move |_ctx: &Ctx| val),
@@ -114,8 +130,23 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
                 let object = self.compile_expr(object)?;
                 self.compile_field_access(object, field_name)?
             }
-            Expr::FuncCall(_function, _arguments) => {
-                Err("Function calls not supported")?
+            Expr::FuncCall(function, arguments) => {
+                let arguments = arguments
+                    .iter()
+                    .map(|arg| self.compile_expr(arg))
+                    .collect::<Result<Vec<_>, String>>()?;
+                match function.as_ref() {
+                    Expr::Var(var_name) => self.compile_method_call(
+                        Ctx::get_self_dyn_fn(),
+                        var_name,
+                        arguments,
+                    )?,
+                    Expr::FieldAccess(object, field_name) => {
+                        let object = self.compile_expr(object)?;
+                        self.compile_method_call(object, field_name, arguments)?
+                    }
+                    _ => return Err("Unsupported function call".into()),
+                }
             }
         })
     }

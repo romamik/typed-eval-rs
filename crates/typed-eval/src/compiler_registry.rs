@@ -1,4 +1,4 @@
-use crate::{BinOp, DynFn, SupportedType, UnOp};
+use crate::{BinOp, CompileMethod, DynFn, SupportedType, UnOp};
 use std::{
     any::TypeId,
     collections::{HashMap, HashSet, hash_map::Entry},
@@ -18,6 +18,9 @@ type CompileBinOpFunc = Box<dyn Fn(DynFn, DynFn) -> Result<DynFn, String>>;
 type FieldAccessKey = (TypeId, &'static str);
 type FieldAccessFunc = Box<dyn Fn(DynFn) -> Result<DynFn, String>>;
 
+type MethodCallKey = (TypeId, &'static str, Vec<TypeId>);
+type MethodCallFunc = Box<dyn Fn(DynFn, Vec<DynFn>) -> Result<DynFn, String>>;
+
 // Registry access is passed to SupportedType::register()
 // instead of just passing CompilerRegistry
 //
@@ -34,6 +37,7 @@ pub(crate) struct CompilerRegistry<Ctx> {
     pub(crate) unary_operations: HashMap<UnOpKey, CompileUnOpFunc>,
     pub(crate) binary_operations: HashMap<BinOpKey, CompileBinOpFunc>,
     pub(crate) field_access: HashMap<FieldAccessKey, FieldAccessFunc>,
+    pub(crate) method_calls: HashMap<MethodCallKey, MethodCallFunc>,
     pub(crate) ctx_type: PhantomData<Ctx>,
 }
 
@@ -45,6 +49,7 @@ impl<Ctx: SupportedType> Default for CompilerRegistry<Ctx> {
             unary_operations: HashMap::new(),
             binary_operations: HashMap::new(),
             field_access: HashMap::new(),
+            method_calls: HashMap::new(),
             ctx_type: PhantomData,
         }
     }
@@ -152,6 +157,20 @@ impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
             });
 
         try_insert(&mut self.registry.field_access, key, compile_func)
+    }
+
+    pub fn register_method_call<A, R>(
+        &mut self,
+        method_name: &'static str,
+        method_fn: impl CompileMethod<Ctx, T, A, R>,
+    ) -> Result<(), String> {
+        let key = (TypeId::of::<T>(), method_name, method_fn.get_arg_types());
+        let compile_func = Box::new(
+            move |obj: DynFn, args: Vec<DynFn>| -> Result<DynFn, String> {
+                method_fn.compile(obj, args)
+            },
+        );
+        try_insert(&mut self.registry.method_calls, key, compile_func)
     }
 }
 
