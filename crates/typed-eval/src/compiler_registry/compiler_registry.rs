@@ -18,8 +18,11 @@ type CompileBinOpFunc = Box<dyn Fn(DynFn, DynFn) -> Result<DynFn, String>>;
 type FieldAccessKey = (TypeId, &'static str);
 type FieldAccessFunc = Box<dyn Fn(DynFn) -> Result<DynFn, String>>;
 
-type MethodCallKey = (TypeId, &'static str, Vec<TypeId>);
-type MethodCallFunc = Box<dyn Fn(DynFn, Vec<DynFn>) -> Result<DynFn, String>>;
+type MethodCallKey = (TypeId, &'static str);
+pub(crate) struct MethodCallData {
+    pub compile_fn: Box<dyn Fn(DynFn, Vec<DynFn>) -> Result<DynFn, String>>,
+    pub arg_types: Vec<TypeId>,
+}
 
 // Registry access is passed to SupportedType::register()
 // instead of just passing CompilerRegistry
@@ -38,7 +41,7 @@ pub(crate) struct CompilerRegistry {
     pub(crate) unary_operations: HashMap<UnOpKey, CompileUnOpFunc>,
     pub(crate) binary_operations: HashMap<BinOpKey, CompileBinOpFunc>,
     pub(crate) field_access: HashMap<FieldAccessKey, FieldAccessFunc>,
-    pub(crate) method_calls: HashMap<MethodCallKey, MethodCallFunc>,
+    pub(crate) method_calls: HashMap<MethodCallKey, MethodCallData>,
 }
 
 impl CompilerRegistry {

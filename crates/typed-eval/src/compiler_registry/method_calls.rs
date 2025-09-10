@@ -1,5 +1,7 @@
 use super::try_insert;
-use crate::{DynFn, RegistryAccess, SupportedType};
+use crate::{
+    DynFn, RegistryAccess, SupportedType, compiler_registry::MethodCallData,
+};
 use std::any::TypeId;
 
 macro_rules! register_method_call {
@@ -13,13 +15,7 @@ macro_rules! register_method_call {
             $($arg: SupportedType,)*
             Ret: SupportedType,
         {
-            let key = (
-                TypeId::of::<T>(),
-                method_name,
-                vec![$(TypeId::of::<$arg>(),)*],
-            );
-
-            let compile_func = Box::new(
+            let compile_fn = Box::new(
                 #[allow(unused_mut, non_snake_case)]
                 move |object: DynFn, mut args: Vec<DynFn>| -> Result<DynFn, String> {
                     if args.len() != $count {
@@ -45,7 +41,16 @@ macro_rules! register_method_call {
                     }))
                 },
             );
-            try_insert(&mut self.registry.method_calls, key, compile_func)
+
+            let key = (TypeId::of::<T>(), method_name);
+            let arg_types = vec![$(TypeId::of::<$arg>(),)*];
+
+            let data = MethodCallData {
+                compile_fn,
+                arg_types,
+            };
+
+            try_insert(&mut self.registry.method_calls, key, data)
         }
     };
 }

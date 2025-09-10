@@ -1,4 +1,6 @@
-use crate::{BoxedFn, CompilerRegistry, DynFn, Expr, SupportedType};
+use crate::{
+    BoxedFn, CompilerRegistry, DynFn, Expr, MethodCallData, SupportedType,
+};
 use std::{any::TypeId, marker::PhantomData};
 
 pub trait ExprContext: SupportedType {
@@ -87,13 +89,35 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
         method_name: &str,
         arguments: Vec<DynFn>,
     ) -> Result<DynFn, String> {
-        let Some(compile_fn) = self.registry.method_calls.get(&(
-            object.ret_type,
-            method_name,
-            arguments.iter().map(|arg| arg.ret_type).collect::<Vec<_>>(),
-        )) else {
-            Err("No such method".to_string())?
+        let Some(MethodCallData {
+            compile_fn,
+            arg_types,
+        }) = self
+            .registry
+            .method_calls
+            .get(&(object.ret_type, method_name))
+        else {
+            Err(format!(
+                "No such method {method_name} on type {:?}",
+                object.ret_type
+            ))?
         };
+
+        if arg_types.len() != arguments.len() {
+            Err(format!(
+                "Expected {} arguments, got {}",
+                arg_types.len(),
+                arguments.len()
+            ))?;
+        }
+
+        // cast arguments to arg_types
+        let arguments = arguments
+            .into_iter()
+            .zip(arg_types.iter().copied())
+            .map(|(arg, arg_type)| self.cast(arg, arg_type))
+            .collect::<Result<Vec<_>, String>>()?;
+
         compile_fn(object, arguments)
     }
 
