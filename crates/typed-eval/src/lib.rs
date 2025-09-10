@@ -17,7 +17,7 @@ pub fn eval<'a, Ctx, Ret>(
     ctx: &'a Ctx,
 ) -> Result<Ret::RefType<'a>, String>
 where
-    Ctx: ExprContext,
+    Ctx: SupportedType,
     Ret: SupportedType,
 {
     let expr = parse_expr(input);
@@ -66,6 +66,11 @@ mod tests {
 
     impl SupportedType for User {
         type RefType<'a> = &'a User;
+
+        fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
+            self
+        }
+
         fn register<Ctx: SupportedType>(
             mut registry: RegistryAccess<Ctx, Self>,
         ) -> Result<(), String> {
@@ -75,7 +80,7 @@ mod tests {
             // )?;
             registry.register_field_access::<i64>(
                 "age",
-                |_: &Ctx, obj: &User| obj.age,
+                |_: &Ctx, obj: &User| obj.age.to_ref_type(),
             )?;
 
             registry.register_method_call_0::<i64>("get_age", Self::get_age)?;
@@ -109,24 +114,28 @@ mod tests {
     impl SupportedType for TestContext {
         type RefType<'a> = &'a TestContext;
 
+        fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
+            self
+        }
+
         fn register<Ctx: SupportedType>(
             mut registry: RegistryAccess<Ctx, Self>,
         ) -> Result<(), String> {
             registry.register_field_access::<i64>(
                 "foo",
-                |_: &Ctx, obj: &TestContext| obj.foo,
+                |_: &Ctx, obj: &TestContext| obj.foo.to_ref_type(),
             )?;
             registry.register_field_access::<f64>(
                 "bar",
-                |_: &Ctx, obj: &TestContext| obj.bar,
+                |_: &Ctx, obj: &TestContext| obj.bar.to_ref_type(),
             )?;
             registry.register_field_access::<User>(
                 "user",
-                |_: &Ctx, obj: &TestContext| &obj.user,
+                |_: &Ctx, obj: &TestContext| obj.user.to_ref_type(),
             )?;
             registry.register_field_access::<User>(
                 "user_b",
-                |_: &Ctx, obj: &TestContext| &obj.user_b,
+                |_: &Ctx, obj: &TestContext| obj.user_b.to_ref_type(),
             )?;
 
             registry.register_type::<i64>()?;

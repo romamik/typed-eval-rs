@@ -7,6 +7,8 @@ pub trait SupportedType: Sized + 'static {
         registry: RegistryAccess<Ctx, Self>,
     ) -> Result<(), String>;
 
+    fn to_ref_type<'a>(&'a self) -> Self::RefType<'a>;
+
     fn make_dyn_fn<Ctx>(
         f: impl for<'a> Fn(&'a Ctx) -> Self::RefType<'a> + Clone + 'static,
     ) -> DynFn
@@ -19,6 +21,10 @@ pub trait SupportedType: Sized + 'static {
 
 impl SupportedType for i64 {
     type RefType<'a> = i64;
+
+    fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
+        *self
+    }
 
     fn register<Ctx: SupportedType>(
         mut registry: RegistryAccess<Ctx, Self>,
@@ -49,6 +55,10 @@ impl SupportedType for i64 {
 
 impl SupportedType for f64 {
     type RefType<'a> = f64;
+
+    fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
+        *self
+    }
 
     fn register<Ctx: SupportedType>(
         mut registry: RegistryAccess<Ctx, Self>,

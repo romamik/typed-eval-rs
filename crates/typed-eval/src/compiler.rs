@@ -3,25 +3,12 @@ use crate::{
 };
 use std::{any::TypeId, marker::PhantomData};
 
-pub trait ExprContext: SupportedType {
-    fn get_self_dyn_fn() -> DynFn;
-}
-
-impl<T> ExprContext for T
-where
-    T: for<'a> SupportedType<RefType<'a> = &'a T>,
-{
-    fn get_self_dyn_fn() -> DynFn {
-        T::make_dyn_fn(move |ctx| ctx)
-    }
-}
-
 pub struct Compiler<Ctx> {
     registry: CompilerRegistry,
     ctx_ty: PhantomData<Ctx>,
 }
 
-impl<Ctx: ExprContext> Compiler<Ctx> {
+impl<Ctx: SupportedType> Compiler<Ctx> {
     pub fn new() -> Result<Self, String> {
         let mut registry = CompilerRegistry::default();
 
@@ -127,7 +114,9 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
             &Expr::Float(val) => DynFn::new::<_, f64>(move |_ctx: &Ctx| val),
             Expr::String(_string) => Err("Strings not supported")?,
             Expr::Var(var_name) => {
-                self.compile_field_access(Ctx::get_self_dyn_fn(), var_name)?
+                let ctx_fn =
+                    Ctx::make_dyn_fn(|ctx: &Ctx| Ctx::to_ref_type(ctx));
+                self.compile_field_access(ctx_fn, var_name)?
             }
             Expr::UnOp(op, rhs) => {
                 let rhs = self.compile_expr(rhs)?;
@@ -163,12 +152,12 @@ impl<Ctx: ExprContext> Compiler<Ctx> {
                     .iter()
                     .map(|arg| self.compile_expr(arg))
                     .collect::<Result<Vec<_>, String>>()?;
+                let ctx_fn =
+                    Ctx::make_dyn_fn(|ctx: &Ctx| Ctx::to_ref_type(ctx));
                 match function.as_ref() {
-                    Expr::Var(var_name) => self.compile_method_call(
-                        Ctx::get_self_dyn_fn(),
-                        var_name,
-                        arguments,
-                    )?,
+                    Expr::Var(var_name) => {
+                        self.compile_method_call(ctx_fn, var_name, arguments)?
+                    }
                     Expr::FieldAccess(object, field_name) => {
                         let object = self.compile_expr(object)?;
                         self.compile_method_call(object, field_name, arguments)?
