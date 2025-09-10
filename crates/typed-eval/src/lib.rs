@@ -3,7 +3,6 @@ mod compiler_registry;
 mod dyn_fn;
 mod expr;
 mod expr_parser;
-mod method;
 mod supported_type;
 
 pub use compiler::*;
@@ -11,7 +10,6 @@ pub use compiler_registry::*;
 pub use dyn_fn::*;
 pub use expr::*;
 pub use expr_parser::*;
-pub use method::*;
 pub use supported_type::*;
 
 pub fn eval<'a, Ctx, Ret>(
@@ -82,25 +80,19 @@ mod tests {
 
             registry.register_method_call_0::<i64>("get_age", Self::get_age)?;
 
-            registry.register_method_call::<i64, i64>(
+            registry.register_method_call_1::<i64, i64>(
                 "get_age_multiplied",
-                CompileMethod1Args(|_, user: &Self, factor: i64| {
-                    user.get_age_multiplied(factor)
-                }),
+                Self::get_age_multiplied,
             )?;
 
-            registry.register_method_call::<(i64, i64), i64>(
+            registry.register_method_call_2::<i64, i64, i64>(
                 "get_age_clamped",
-                CompileMethod2Args(|_, user: &Self, min: i64, max: i64| {
-                    user.get_age_clamped(min, max)
-                }),
+                Self::get_age_clamped,
             )?;
 
-            registry.register_method_call::<User, i64>(
+            registry.register_method_call_1::<User, i64>(
                 "age_diff",
-                CompileMethod1Args(|_, user: &Self, other: &User| {
-                    user.age_diff(other)
-                }),
+                Self::age_diff,
             )?;
 
             Ok(())
@@ -111,7 +103,7 @@ mod tests {
         foo: i64,
         bar: f64,
         user: User,
-        userB: User,
+        user_b: User,
     }
 
     impl SupportedType for TestContext {
@@ -133,8 +125,8 @@ mod tests {
                 |_: &Ctx, obj: &TestContext| &obj.user,
             )?;
             registry.register_field_access::<User>(
-                "userB",
-                |_: &Ctx, obj: &TestContext| &obj.userB,
+                "user_b",
+                |_: &Ctx, obj: &TestContext| &obj.user_b,
             )?;
 
             registry.register_type::<i64>()?;
@@ -154,7 +146,7 @@ mod tests {
                 name: "John Doe".to_string(),
                 age: 45,
             },
-            userB: User {
+            user_b: User {
                 name: "Alice".to_string(),
                 age: 40,
             },
@@ -188,6 +180,6 @@ mod tests {
             eval::<_, i64>("user.get_age_clamped(30, 40)", &ctx),
             Ok(40)
         );
-        assert_eq!(eval::<_, i64>("user.age_diff(userB)", &ctx), Ok(5));
+        assert_eq!(eval::<_, i64>("user.age_diff(user_b)", &ctx), Ok(5));
     }
 }

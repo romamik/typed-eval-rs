@@ -3,5 +3,8 @@ name = "typed-eval"
 version = "0.1.0"
 edition = "2024"
 
+[lints.clippy]
+module_inception="allow"
+
 [dependencies]
 chumsky = { version = "0.10.1", features = ["unstable"] }
