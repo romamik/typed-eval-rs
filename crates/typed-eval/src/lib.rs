@@ -43,9 +43,6 @@ where
 
 #[cfg(test)]
 mod tests {
-
-    use std::any::type_name;
-
     use crate::*;
 
     #[derive(Debug, PartialEq)]
@@ -127,7 +124,7 @@ mod tests {
 
     impl SupportedTypeMethods for TestContext {
         fn register_methods<Ctx: SupportedType>(
-            registry: RegistryAccess<Ctx, Self>,
+            _registry: RegistryAccess<Ctx, Self>,
         ) -> Result<(), String> {
             Ok(())
         }
