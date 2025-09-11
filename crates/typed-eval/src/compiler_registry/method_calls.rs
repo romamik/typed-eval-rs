@@ -15,6 +15,11 @@ macro_rules! register_method_call {
             $($arg: SupportedType,)*
             Ret: SupportedType,
         {
+            $(
+                self.register_type::<$arg>()?;
+            )*
+            self.register_type::<Ret>()?;
+
             let compile_fn = Box::new(
                 #[allow(unused_mut, non_snake_case)]
                 move |object: DynFn, mut args: Vec<DynFn>| -> Result<DynFn, String> {

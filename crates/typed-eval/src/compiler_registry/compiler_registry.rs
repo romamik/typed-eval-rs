@@ -144,6 +144,8 @@ impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
         T: for<'a> SupportedType<RefType<'a> = &'a T>,
         Field: SupportedType,
     {
+        self.register_type::<Field>()?;
+
         let key = (TypeId::of::<T>(), field_name);
         let compile_func =
             Box::new(move |obj: DynFn| -> Result<DynFn, String> {

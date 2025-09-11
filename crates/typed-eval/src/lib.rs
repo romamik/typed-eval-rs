@@ -153,10 +153,6 @@ mod tests {
                 obj.user_b.to_ref_type()
             })?;
 
-            registry.register_type::<i64>()?;
-            registry.register_type::<f64>()?;
-            registry.register_type::<User>()?;
-
             Ok(())
         }
     }
