@@ -12,11 +12,11 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
     pub fn new() -> Result<Self, String> {
         let mut registry = CompilerRegistry::default();
 
-        // register literal types
+        // Register literal types
         registry.register_type::<Ctx, i64>()?;
         registry.register_type::<Ctx, f64>()?;
 
-        // register context type and all types referenced by it
+        // Register context type
         registry.register_type::<Ctx, Ctx>()?;
 
         Ok(Self {
@@ -25,19 +25,20 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
         })
     }
 
-    // helper function that tries to cast expression to given type
+    /// try to cast expression to given type
+    /// on success returned DynFn will have ret_type matching ty
     fn cast(&self, expr: DynFn, ty: TypeId) -> Result<DynFn, String> {
         if expr.ret_type == ty {
             return Ok(expr);
         }
         let key = (expr.ret_type, ty);
-        let Some(compile_cast_func) = self.registry.casts.get(&key) else {
-            Err("Cannot cast")?
+        let Some(compile_cast) = self.registry.casts.get(&key) else {
+            Err(format!("Cannot cast from {:?} to {:?}", expr.ret_type, ty))?
         };
-        compile_cast_func(expr)
+        compile_cast(expr)
     }
 
-    // helper functions that tries to make two expressions the same type
+    /// try to cast two expressions so that they have the same ret_type
     fn cast_same_type(
         &self,
         a: DynFn,
@@ -52,7 +53,7 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
         if let Ok(a_casted) = self.cast(a, b.ret_type) {
             return Ok((a_casted, b));
         }
-        Err("Cannot cast to same type".to_string())
+        Err("Cannot cast expressions to same type".into())
     }
 
     fn compile_field_access(
@@ -65,7 +66,10 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
             .field_access
             .get(&(object.ret_type, field_name))
         else {
-            Err(format!("No such field {field_name}"))?
+            Err(format!(
+                "No such field '{field_name}' on type {:?}",
+                object.ret_type
+            ))?
         };
         compile_fn(object)
     }
@@ -85,8 +89,8 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
             .get(&(object.ret_type, method_name))
         else {
             Err(format!(
-                "No such method {method_name} on type {:?}",
-                object.ret_type
+                "No such method '{}' on type {:?}",
+                method_name, object.ret_type
             ))?
         };
 
@@ -102,70 +106,98 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
         let arguments = arguments
             .into_iter()
             .zip(arg_types.iter().copied())
-            .map(|(arg, arg_type)| self.cast(arg, arg_type))
+            .map(|(arg, ty)| self.cast(arg, ty))
             .collect::<Result<Vec<_>, String>>()?;
 
         compile_fn(object, arguments)
     }
 
-    pub fn compile_expr(&self, expr: &Expr) -> Result<DynFn, String> {
-        Ok(match expr {
-            &Expr::Int(val) => DynFn::new::<_, i64>(move |_ctx: &Ctx| val),
-            &Expr::Float(val) => DynFn::new::<_, f64>(move |_ctx: &Ctx| val),
-            Expr::String(_string) => Err("Strings not supported")?,
+    fn compile_unary_op(
+        &self,
+        op: &crate::UnOp,
+        rhs: &Expr,
+    ) -> Result<DynFn, String> {
+        let rhs_fn = self.compile_expr(rhs)?;
+        let Some(compile_fn) =
+            self.registry.unary_operations.get(&(*op, rhs_fn.ret_type))
+        else {
+            Err(format!("Unsupported unary operation {:?}", op))?
+        };
+        compile_fn(rhs_fn)
+    }
+
+    fn compile_binary_op(
+        &self,
+        op: &crate::BinOp,
+        lhs: &Expr,
+        rhs: &Expr,
+    ) -> Result<DynFn, String> {
+        let lhs_fn = self.compile_expr(lhs)?;
+        let rhs_fn = self.compile_expr(rhs)?;
+        let (lhs_fn, rhs_fn) = self.cast_same_type(lhs_fn, rhs_fn)?;
+
+        let Some(compile_fn) =
+            self.registry.binary_operations.get(&(*op, lhs_fn.ret_type))
+        else {
+            Err(format!("Unsupported binary operation {:?}", op))?
+        };
+        compile_fn(lhs_fn, rhs_fn)
+    }
+
+    fn compile_variable(&self, var_name: &str) -> Result<DynFn, String> {
+        let ctx_fn = Ctx::make_dyn_fn(|ctx: &Ctx| Ctx::to_ref_type(ctx));
+        self.compile_field_access(ctx_fn, var_name)
+    }
+
+    fn compile_function_call(
+        &self,
+        function: &Expr,
+        arguments: &[Expr],
+    ) -> Result<DynFn, String> {
+        let args_fns = arguments
+            .iter()
+            .map(|arg| self.compile_expr(arg))
+            .collect::<Result<Vec<_>, String>>()?;
+
+        let ctx_fn = Ctx::make_dyn_fn(|ctx: &Ctx| Ctx::to_ref_type(ctx));
+
+        match function {
             Expr::Var(var_name) => {
-                let ctx_fn =
-                    Ctx::make_dyn_fn(|ctx: &Ctx| Ctx::to_ref_type(ctx));
-                self.compile_field_access(ctx_fn, var_name)?
+                self.compile_method_call(ctx_fn, var_name, args_fns)
             }
-            Expr::UnOp(op, rhs) => {
-                let rhs = self.compile_expr(rhs)?;
-
-                let Some(compile_un_op) =
-                    self.registry.unary_operations.get(&(*op, rhs.ret_type))
-                else {
-                    Err("Unsupported unary operation")?
-                };
-
-                compile_un_op(rhs)?
+            Expr::FieldAccess(obj, field_name) => {
+                let obj_fn = self.compile_expr(obj)?;
+                self.compile_method_call(obj_fn, field_name, args_fns)
             }
-            Expr::BinOp(op, lhs, rhs) => {
-                let lhs = self.compile_expr(lhs)?;
-                let rhs = self.compile_expr(rhs)?;
+            _ => Err("Unsupported function call".into()),
+        }
+    }
 
-                let (lhs, rhs) = self.cast_same_type(lhs, rhs)?;
+    pub fn compile_expr(&self, expr: &Expr) -> Result<DynFn, String> {
+        match expr {
+            &Expr::Int(val) => Ok(DynFn::new::<_, i64>(move |_ctx: &Ctx| val)),
 
-                let Some(compile_bin_op) =
-                    self.registry.binary_operations.get(&(*op, lhs.ret_type))
-                else {
-                    Err("Unsupported binary operation")?
-                };
+            &Expr::Float(val) => {
+                Ok(DynFn::new::<_, f64>(move |_ctx: &Ctx| val))
+            }
 
-                compile_bin_op(lhs, rhs)?
+            Expr::String(_) => Err("Strings literals are not supported".into()),
+
+            Expr::Var(var_name) => self.compile_variable(var_name),
+
+            Expr::UnOp(op, rhs) => self.compile_unary_op(op, rhs),
+
+            Expr::BinOp(op, lhs, rhs) => self.compile_binary_op(op, lhs, rhs),
+
+            Expr::FieldAccess(obj, field_name) => {
+                let obj_fn = self.compile_expr(obj)?;
+                self.compile_field_access(obj_fn, field_name)
             }
-            Expr::FieldAccess(object, field_name) => {
-                let object = self.compile_expr(object)?;
-                self.compile_field_access(object, field_name)?
+
+            Expr::FuncCall(func, args) => {
+                self.compile_function_call(func, args)
             }
-            Expr::FuncCall(function, arguments) => {
-                let arguments = arguments
-                    .iter()
-                    .map(|arg| self.compile_expr(arg))
-                    .collect::<Result<Vec<_>, String>>()?;
-                let ctx_fn =
-                    Ctx::make_dyn_fn(|ctx: &Ctx| Ctx::to_ref_type(ctx));
-                match function.as_ref() {
-                    Expr::Var(var_name) => {
-                        self.compile_method_call(ctx_fn, var_name, arguments)?
-                    }
-                    Expr::FieldAccess(object, field_name) => {
-                        let object = self.compile_expr(object)?;
-                        self.compile_method_call(object, field_name, arguments)?
-                    }
-                    _ => return Err("Unsupported function call".into()),
-                }
-            }
-        })
+        }
     }
 
     pub fn compile<Ret: SupportedType>(
@@ -173,9 +205,9 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
         expr: &Expr,
     ) -> Result<BoxedFn<Ctx, Ret>, String> {
         let dyn_fn = self.compile_expr(expr)?;
-        let casted_dyn_fn = self.cast(dyn_fn, TypeId::of::<Ret>())?;
-        casted_dyn_fn
+        let casted_fn = self.cast(dyn_fn, TypeId::of::<Ret>())?;
+        casted_fn
             .downcast::<Ctx, Ret>()
-            .ok_or("Compiler error: type mismatch".to_string())
+            .ok_or_else(|| "Compiler error: type mismatch".to_string())
     }
 }
