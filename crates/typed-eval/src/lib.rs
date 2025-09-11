@@ -1,3 +1,9 @@
+#![cfg_attr(feature = "nightly", feature(min_specialization))]
+
+#[cfg(feature = "nightly")]
+#[rustversion::not(nightly)]
+compile_error!("The `nightly` feature requires a nightly compiler");
+
 mod compiler;
 mod compiler_registry;
 mod dyn_fn;
@@ -38,6 +44,8 @@ where
 #[cfg(test)]
 mod tests {
 
+    use std::any::type_name;
+
     use crate::*;
 
     #[derive(Debug, PartialEq)]
@@ -64,6 +72,30 @@ mod tests {
         }
     }
 
+    impl SupportedTypeMethods for User {
+        fn register_methods<Ctx: SupportedType>(
+            mut registry: RegistryAccess<Ctx, Self>,
+        ) -> Result<(), String> {
+            registry.register_method_call_0::<i64>("get_age", Self::get_age)?;
+
+            registry.register_method_call_1::<i64, i64>(
+                "get_age_multiplied",
+                Self::get_age_multiplied,
+            )?;
+
+            registry.register_method_call_2::<i64, i64, i64>(
+                "get_age_clamped",
+                Self::get_age_clamped,
+            )?;
+
+            registry.register_method_call_1::<User, i64>(
+                "age_diff",
+                Self::age_diff,
+            )?;
+            Ok(())
+        }
+    }
+
     impl SupportedType for User {
         type RefType<'a> = &'a User;
 
@@ -82,23 +114,6 @@ mod tests {
                 obj.age.to_ref_type()
             })?;
 
-            registry.register_method_call_0::<i64>("get_age", Self::get_age)?;
-
-            registry.register_method_call_1::<i64, i64>(
-                "get_age_multiplied",
-                Self::get_age_multiplied,
-            )?;
-
-            registry.register_method_call_2::<i64, i64, i64>(
-                "get_age_clamped",
-                Self::get_age_clamped,
-            )?;
-
-            registry.register_method_call_1::<User, i64>(
-                "age_diff",
-                Self::age_diff,
-            )?;
-
             Ok(())
         }
     }
@@ -108,6 +123,14 @@ mod tests {
         bar: f64,
         user: User,
         user_b: User,
+    }
+
+    impl SupportedTypeMethods for TestContext {
+        fn register_methods<Ctx: SupportedType>(
+            registry: RegistryAccess<Ctx, Self>,
+        ) -> Result<(), String> {
+            Ok(())
+        }
     }
 
     impl SupportedType for TestContext {

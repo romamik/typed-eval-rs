@@ -8,3 +8,7 @@ module_inception="allow"
 
 [dependencies]
 chumsky = { version = "0.10.1", features = ["unstable"] }
+rustversion = "1.0.22"
+
+[features]
+nightly=[]

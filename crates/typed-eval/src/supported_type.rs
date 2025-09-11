@@ -1,6 +1,6 @@
 use crate::{BinOp, DynFn, RegistryAccess, UnOp};
 
-pub trait SupportedType: Sized + 'static {
+pub trait SupportedType: SupportedTypeMethods + 'static {
     type RefType<'a>;
 
     fn register<Ctx: SupportedType>(
@@ -19,6 +19,30 @@ pub trait SupportedType: Sized + 'static {
     }
 }
 
+// separate trait for methods
+// because Derive macro do not have access to impl blocks
+// there is a separate procedural macro to implement this trait
+pub trait SupportedTypeMethods: Sized {
+    fn register_methods<Ctx: SupportedType>(
+        registry: RegistryAccess<Ctx, Self>,
+    ) -> Result<(), String> {
+        _ = registry;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "nightly")]
+// Blanket implementation with no methods
+impl<T: SupportedType> SupportedTypeMethods for T {
+    default fn register_methods<Ctx: SupportedType>(
+        _registry: RegistryAccess<Ctx, Self>,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+#[cfg(not(feature = "nightly"))]
+impl SupportedTypeMethods for i64 {}
 impl SupportedType for i64 {
     type RefType<'a> = i64;
 
@@ -53,6 +77,8 @@ impl SupportedType for i64 {
     }
 }
 
+#[cfg(not(feature = "nightly"))]
+impl SupportedTypeMethods for f64 {}
 impl SupportedType for f64 {
     type RefType<'a> = f64;
 

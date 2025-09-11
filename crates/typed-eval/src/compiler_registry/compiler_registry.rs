@@ -34,6 +34,15 @@ pub struct RegistryAccess<'r, Ctx, T> {
     ty: PhantomData<(Ctx, T)>,
 }
 
+impl<'r, Ctx, T> RegistryAccess<'r, Ctx, T> {
+    pub(crate) fn new(registry: &'r mut CompilerRegistry) -> Self {
+        Self {
+            registry,
+            ty: PhantomData,
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct CompilerRegistry {
     registered_types: HashSet<TypeId>,
@@ -49,14 +58,10 @@ impl CompilerRegistry {
         &mut self,
     ) -> Result<(), String> {
         let type_id = TypeId::of::<T>();
-        if self.registered_types.contains(&type_id) {
-            return Ok(());
+        if self.registered_types.insert(type_id) {
+            T::register_methods(RegistryAccess::<Ctx, T>::new(self))?;
+            T::register(RegistryAccess::<Ctx, T>::new(self))?;
         }
-        self.registered_types.insert(type_id);
-        T::register(RegistryAccess::<Ctx, T> {
-            registry: self,
-            ty: PhantomData,
-        })?;
         Ok(())
     }
 }
