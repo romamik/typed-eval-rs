@@ -1,8 +1,7 @@
 #![cfg_attr(feature = "nightly", feature(min_specialization))]
 
-#[cfg(feature = "nightly")]
-#[rustversion::not(nightly)]
-compile_error!("The `nightly` feature requires a nightly compiler");
+// helps derived macro refer to this crate by name, from within the same crate
+extern crate self as typed_eval;
 
 mod compiler;
 mod compiler_registry;
@@ -17,6 +16,12 @@ pub use dyn_fn::*;
 pub use expr::*;
 pub use expr_parser::*;
 pub use supported_type::*;
+
+pub use typed_eval_macro::SupportedType;
+
+#[cfg(feature = "nightly")]
+#[rustversion::not(nightly)]
+compile_error!("The `nightly` feature requires a nightly compiler");
 
 pub fn eval<'a, Ctx, Ret>(
     input: &str,
@@ -45,9 +50,9 @@ where
 mod tests {
     use crate::*;
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, PartialEq, SupportedType)]
     struct User {
-        name: String,
+        // name: String,
         age: i64,
     }
 
@@ -93,28 +98,7 @@ mod tests {
         }
     }
 
-    impl SupportedType for User {
-        type RefType<'a> = &'a User;
-
-        fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
-            self
-        }
-
-        fn register<Ctx: SupportedType>(
-            mut registry: RegistryAccess<Ctx, Self>,
-        ) -> Result<(), String> {
-            // registry.register_field_access::<Self, String>(
-            //     "name",
-            //     |_: &Ctx, obj: &User| obj.name.clone(),
-            // )?;
-            registry.register_field_access::<i64>("age", |obj: &User| {
-                obj.age.to_ref_type()
-            })?;
-
-            Ok(())
-        }
-    }
-
+    #[derive(SupportedType)]
     struct TestContext {
         foo: i64,
         bar: f64,
@@ -130,44 +114,17 @@ mod tests {
         }
     }
 
-    impl SupportedType for TestContext {
-        type RefType<'a> = &'a TestContext;
-
-        fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
-            self
-        }
-
-        fn register<Ctx: SupportedType>(
-            mut registry: RegistryAccess<Ctx, Self>,
-        ) -> Result<(), String> {
-            registry.register_field_access::<i64>("foo", |obj| {
-                obj.foo.to_ref_type()
-            })?;
-            registry.register_field_access::<f64>("bar", |obj| {
-                obj.bar.to_ref_type()
-            })?;
-            registry.register_field_access::<User>("user", |obj| {
-                obj.user.to_ref_type()
-            })?;
-            registry.register_field_access::<User>("user_b", |obj| {
-                obj.user_b.to_ref_type()
-            })?;
-
-            Ok(())
-        }
-    }
-
     #[test]
     fn test_eval() {
         let ctx = TestContext {
             foo: 1,
             bar: 2.5,
             user: User {
-                name: "John Doe".to_string(),
+                // name: "John Doe".to_string(),
                 age: 45,
             },
             user_b: User {
-                name: "Alice".to_string(),
+                // name: "Alice".to_string(),
                 age: 40,
             },
         };

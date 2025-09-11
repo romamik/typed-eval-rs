@@ -194,6 +194,16 @@ version = "0.1.0"
 dependencies = [
  "chumsky",
  "rustversion",
+ "typed-eval-macro",
+]
+
+[[package]]
+name = "typed-eval-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
