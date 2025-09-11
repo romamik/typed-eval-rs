@@ -73,6 +73,8 @@ mod tests {
         fn age_diff(&self, other: &User) -> i64 {
             self.age - other.age
         }
+
+        fn return_nothing(&self) {}
     }
 
     #[derive(SupportedType)]
@@ -140,5 +142,7 @@ mod tests {
 
         assert_eq!(eval::<_, User>("get_user(0)", &ctx), Ok(&ctx.user));
         assert_eq!(eval::<_, User>("get_user(1)", &ctx), Ok(&ctx.user_b));
+
+        assert_eq!(eval::<_, ()>("user.return_nothing()", &ctx), Ok(()));
     }
 }

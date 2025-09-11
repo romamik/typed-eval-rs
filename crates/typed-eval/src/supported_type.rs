@@ -42,6 +42,22 @@ impl<T: SupportedType> SupportedTypeMethods for T {
 }
 
 #[cfg(not(feature = "nightly"))]
+impl SupportedTypeMethods for () {}
+impl SupportedType for () {
+    type RefType<'a> = ();
+
+    fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
+        *self
+    }
+
+    fn register<Ctx: SupportedType>(
+        _registry: RegistryAccess<Ctx, Self>,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+#[cfg(not(feature = "nightly"))]
 impl SupportedTypeMethods for i64 {}
 impl SupportedType for i64 {
     type RefType<'a> = i64;
