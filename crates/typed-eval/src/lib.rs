@@ -78,10 +78,9 @@ mod tests {
             //     "name",
             //     |_: &Ctx, obj: &User| obj.name.clone(),
             // )?;
-            registry.register_field_access::<i64>(
-                "age",
-                |_: &Ctx, obj: &User| obj.age.to_ref_type(),
-            )?;
+            registry.register_field_access::<i64>("age", |obj: &User| {
+                obj.age.to_ref_type()
+            })?;
 
             registry.register_method_call_0::<i64>("get_age", Self::get_age)?;
 
@@ -121,22 +120,18 @@ mod tests {
         fn register<Ctx: SupportedType>(
             mut registry: RegistryAccess<Ctx, Self>,
         ) -> Result<(), String> {
-            registry.register_field_access::<i64>(
-                "foo",
-                |_: &Ctx, obj: &TestContext| obj.foo.to_ref_type(),
-            )?;
-            registry.register_field_access::<f64>(
-                "bar",
-                |_: &Ctx, obj: &TestContext| obj.bar.to_ref_type(),
-            )?;
-            registry.register_field_access::<User>(
-                "user",
-                |_: &Ctx, obj: &TestContext| obj.user.to_ref_type(),
-            )?;
-            registry.register_field_access::<User>(
-                "user_b",
-                |_: &Ctx, obj: &TestContext| obj.user_b.to_ref_type(),
-            )?;
+            registry.register_field_access::<i64>("foo", |obj| {
+                obj.foo.to_ref_type()
+            })?;
+            registry.register_field_access::<f64>("bar", |obj| {
+                obj.bar.to_ref_type()
+            })?;
+            registry.register_field_access::<User>("user", |obj| {
+                obj.user.to_ref_type()
+            })?;
+            registry.register_field_access::<User>("user_b", |obj| {
+                obj.user_b.to_ref_type()
+            })?;
 
             registry.register_type::<i64>()?;
             registry.register_type::<f64>()?;

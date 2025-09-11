@@ -133,9 +133,10 @@ impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
     pub fn register_field_access<Field>(
         &mut self,
         field_name: &'static str,
-        field_getter: for<'a> fn(&'a Ctx, T::RefType<'a>) -> Field::RefType<'a>,
+        field_getter: for<'a> fn(&'a T) -> Field::RefType<'a>,
     ) -> Result<(), String>
     where
+        T: for<'a> SupportedType<RefType<'a> = &'a T>,
         Field: SupportedType,
     {
         let key = (TypeId::of::<T>(), field_name);
@@ -144,7 +145,7 @@ impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
                 let obj = obj
                     .downcast::<Ctx, T>()
                     .ok_or("Compiler error: obj type mistmatch")?;
-                Ok(Field::make_dyn_fn(move |ctx| field_getter(ctx, obj(ctx))))
+                Ok(Field::make_dyn_fn(move |ctx| field_getter(obj(ctx))))
             });
 
         try_insert(&mut self.registry.field_access, key, compile_func)
