@@ -1,59 +1,26 @@
+mod supported_type;
+mod supported_type_methods;
+
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::{Data, DataStruct, DeriveInput, Fields};
+use supported_type::supported_type_derive_impl;
+use supported_type_methods::supported_type_methods_impl;
+use syn::{DeriveInput, ItemImpl, parse_macro_input};
 
 #[proc_macro_derive(SupportedType)]
 pub fn supported_type_derive(input: TokenStream) -> TokenStream {
-    let ast = syn::parse(input).unwrap();
+    let ast = parse_macro_input!(input as DeriveInput);
     supported_type_derive_impl(&ast)
 }
 
-fn supported_type_derive_impl(ast: &DeriveInput) -> TokenStream {
-    let struct_name = &ast.ident;
+#[proc_macro_attribute]
+pub fn supported_type_methods(
+    _attr: TokenStream,
+    item: TokenStream,
+) -> TokenStream {
+    let impl_block = parse_macro_input!(item as ItemImpl);
 
-    let Data::Struct(DataStruct {
-        fields: Fields::Named(fields),
-        ..
-    }) = &ast.data
-    else {
-        panic!(
-            "#[derive(SupportedType) only supports structs with named fields"
-        )
-    };
-
-    let register_fields = fields.named.iter().map(|field| {
-        let field_name = field
-            .ident
-            .as_ref()
-            .expect("it is a struct with named fields");
-        let field_name_str = field_name.to_string();
-        let field_type = &field.ty;
-
-        quote! {
-            registry.register_field_access::<#field_type>(
-                #field_name_str,
-                |obj| obj.#field_name.to_ref_type(),
-            )?;
-        }
-    });
-
-    TokenStream::from(quote! {
-        impl typed_eval::SupportedType for #struct_name {
-            type RefType<'a> = &'a Self;
-
-            fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
-                self
-            }
-
-            fn register<Ctx: typed_eval::SupportedType>(
-                mut registry: typed_eval::RegistryAccess<Ctx, Self>,
-            ) -> Result<(), String> {
-                #(
-                    #register_fields
-                )*
-
-                Ok(())
-            }
-        }
-    })
+    match supported_type_methods_impl(impl_block) {
+        Ok(tokens) => tokens,
+        Err(err) => err.to_compile_error().into(),
+    }
 }

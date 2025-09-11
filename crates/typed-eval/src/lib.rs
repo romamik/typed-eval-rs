@@ -17,7 +17,7 @@ pub use expr::*;
 pub use expr_parser::*;
 pub use supported_type::*;
 
-pub use typed_eval_macro::SupportedType;
+pub use typed_eval_macro::{SupportedType, supported_type_methods};
 
 #[cfg(feature = "nightly")]
 #[rustversion::not(nightly)]
@@ -56,6 +56,7 @@ mod tests {
         age: i64,
     }
 
+    #[supported_type_methods]
     impl User {
         fn get_age(&self) -> i64 {
             self.age
@@ -74,30 +75,6 @@ mod tests {
         }
     }
 
-    impl SupportedTypeMethods for User {
-        fn register_methods<Ctx: SupportedType>(
-            mut registry: RegistryAccess<Ctx, Self>,
-        ) -> Result<(), String> {
-            registry.register_method_call_0::<i64>("get_age", Self::get_age)?;
-
-            registry.register_method_call_1::<i64, i64>(
-                "get_age_multiplied",
-                Self::get_age_multiplied,
-            )?;
-
-            registry.register_method_call_2::<i64, i64, i64>(
-                "get_age_clamped",
-                Self::get_age_clamped,
-            )?;
-
-            registry.register_method_call_1::<User, i64>(
-                "age_diff",
-                Self::age_diff,
-            )?;
-            Ok(())
-        }
-    }
-
     #[derive(SupportedType)]
     struct TestContext {
         foo: i64,
@@ -106,11 +83,13 @@ mod tests {
         user_b: User,
     }
 
-    impl SupportedTypeMethods for TestContext {
-        fn register_methods<Ctx: SupportedType>(
-            _registry: RegistryAccess<Ctx, Self>,
-        ) -> Result<(), String> {
-            Ok(())
+    #[supported_type_methods]
+    impl TestContext {
+        fn get_user(&self, n: i64) -> &User {
+            match n % 2 {
+                0 => &self.user,
+                _ => &self.user_b,
+            }
         }
     }
 
@@ -158,5 +137,8 @@ mod tests {
             Ok(40)
         );
         assert_eq!(eval::<_, i64>("user.age_diff(user_b)", &ctx), Ok(5));
+
+        assert_eq!(eval::<_, User>("get_user(0)", &ctx), Ok(&ctx.user));
+        assert_eq!(eval::<_, User>("get_user(1)", &ctx), Ok(&ctx.user_b));
     }
 }
