@@ -69,24 +69,30 @@ fn expr_parser<'src>()
 
         let atom = choice((num, string, var, parens)).padded();
 
-        let field_access = atom.foldl(
-            just('.').ignore_then(text::ident()).repeated(),
-            |lhs, field: &str| {
-                Expr::FieldAccess(Box::new(lhs), field.to_string())
-            },
-        );
-
-        let func_call = field_access
-            .then(
+        enum Postfix {
+            Field(String),
+            Call(Vec<Expr>),
+        }
+        let postfix = atom.foldl(
+            choice((
+                //field access
+                just('.')
+                    .ignore_then(text::ident())
+                    .map(|field: &str| Postfix::Field(field.to_string())),
+                // function call
                 expr.separated_by(just(','))
                     .collect::<Vec<Expr>>()
                     .delimited_by(just('('), just(')'))
-                    .or_not(),
-            )
-            .map(|(body, args)| match args {
-                Some(args) => Expr::FuncCall(Box::new(body), args),
-                None => body,
-            });
+                    .map(|args: Vec<Expr>| Postfix::Call(args)),
+            ))
+            .repeated(),
+            |lhs, postfix| match postfix {
+                Postfix::Field(field) => {
+                    Expr::FieldAccess(Box::new(lhs), field)
+                }
+                Postfix::Call(args) => Expr::FuncCall(Box::new(lhs), args),
+            },
+        );
 
         let unary = one_of("+-")
             .padded()
@@ -96,7 +102,7 @@ fn expr_parser<'src>()
                 _ => panic!("unexpected symbol: one_of should not return anything unexpected"),
             })
             .repeated()
-            .foldr(func_call, |op, rhs| Expr::UnOp(op, Box::new(rhs)));
+            .foldr(postfix, |op, rhs| Expr::UnOp(op, Box::new(rhs)));
 
         let product = unary.clone().foldl(
             one_of("*/")
@@ -297,6 +303,32 @@ mod tests {
                     "bar".to_string()
                 )),
                 vec![Expr::Int(5)]
+            )
+        );
+    }
+
+    #[test]
+    fn test_field_access_and_function_call() {
+        let expr = parse_ok("foo().field");
+        assert_eq!(
+            expr,
+            Expr::FieldAccess(
+                Box::new(Expr::FuncCall(
+                    Box::new(Expr::Var("foo".to_string())),
+                    vec![]
+                )),
+                "field".to_string()
+            )
+        );
+        let expr = parse_ok("foo.field()");
+        assert_eq!(
+            expr,
+            Expr::FuncCall(
+                Box::new(Expr::FieldAccess(
+                    Box::new(Expr::Var("foo".to_string())),
+                    "field".to_string()
+                )),
+                vec![]
             )
         );
     }
