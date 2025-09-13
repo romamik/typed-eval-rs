@@ -1,6 +1,4 @@
-use crate::{
-    BoxedFn, CompilerRegistry, DynFn, Expr, MethodCallData, SupportedType,
-};
+use crate::{BoxedFn, CompilerRegistry, DynFn, EvalType, Expr, MethodCallData};
 use std::{any::TypeId, marker::PhantomData};
 
 pub struct Compiler<Ctx> {
@@ -8,7 +6,7 @@ pub struct Compiler<Ctx> {
     ctx_ty: PhantomData<Ctx>,
 }
 
-impl<Ctx: SupportedType> Compiler<Ctx> {
+impl<Ctx: EvalType> Compiler<Ctx> {
     pub fn new() -> Result<Self, String> {
         let mut registry = CompilerRegistry::default();
 
@@ -200,7 +198,7 @@ impl<Ctx: SupportedType> Compiler<Ctx> {
         }
     }
 
-    pub fn compile<Ret: SupportedType>(
+    pub fn compile<Ret: EvalType>(
         &self,
         expr: &Expr,
     ) -> Result<BoxedFn<Ctx, Ret>, String> {

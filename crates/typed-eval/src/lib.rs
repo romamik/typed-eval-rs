@@ -6,18 +6,18 @@ extern crate self as typed_eval;
 mod compiler;
 mod compiler_registry;
 mod dyn_fn;
+mod eval_type;
 mod expr;
 mod expr_parser;
-mod supported_type;
 
 pub use compiler::*;
 pub use compiler_registry::*;
 pub use dyn_fn::*;
+pub use eval_type::*;
 pub use expr::*;
 pub use expr_parser::*;
-pub use supported_type::*;
 
-pub use typed_eval_macro::{SupportedType, supported_type_methods};
+pub use typed_eval_macro::{EvalType, eval_type_methods};
 
 #[cfg(feature = "nightly")]
 #[rustversion::not(nightly)]
@@ -28,8 +28,8 @@ pub fn eval<'a, Ctx, Ret>(
     ctx: &'a Ctx,
 ) -> Result<Ret::RefType<'a>, String>
 where
-    Ctx: SupportedType,
-    Ret: SupportedType,
+    Ctx: EvalType,
+    Ret: EvalType,
 {
     let expr = parse_expr(input);
     if expr.has_errors() || !expr.has_output() {
@@ -50,7 +50,7 @@ where
 mod tests {
     use crate::*;
 
-    #[derive(SupportedType)]
+    #[derive(EvalType)]
     #[typed_eval(no_methods)]
     struct SomeStruct {
         #[typed_eval(ignore)]
@@ -61,13 +61,13 @@ mod tests {
         old_field_name: i64,
     }
 
-    #[derive(Debug, PartialEq, SupportedType)]
+    #[derive(Debug, PartialEq, EvalType)]
     struct User {
         // name: String,
         age: i64,
     }
 
-    #[supported_type_methods]
+    #[eval_type_methods]
     impl User {
         fn get_age(&self) -> i64 {
             self.age
@@ -88,7 +88,7 @@ mod tests {
         fn return_nothing(&self) {}
     }
 
-    #[derive(SupportedType)]
+    #[derive(EvalType)]
     struct TestContext {
         foo: i64,
         bar: f64,
@@ -97,7 +97,7 @@ mod tests {
         some_struct: SomeStruct,
     }
 
-    #[supported_type_methods]
+    #[eval_type_methods]
     impl TestContext {
         fn get_user(&self, n: i64) -> &User {
             match n % 2 {

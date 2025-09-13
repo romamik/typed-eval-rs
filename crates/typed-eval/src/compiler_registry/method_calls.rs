@@ -1,6 +1,6 @@
 use super::try_insert;
 use crate::{
-    DynFn, RegistryAccess, SupportedType, compiler_registry::MethodCallData,
+    DynFn, EvalType, RegistryAccess, compiler_registry::MethodCallData,
 };
 use std::any::TypeId;
 
@@ -12,8 +12,8 @@ macro_rules! register_method_call {
             method_fn: for<'a> fn(&'a T $(, $arg::RefType<'a> )* ) -> Ret::RefType<'a>,
         ) -> Result<(), String>
         where
-            $($arg: SupportedType,)*
-            Ret: SupportedType,
+            $($arg: EvalType,)*
+            Ret: EvalType,
         {
             $(
                 self.register_type::<$arg>()?;
@@ -62,8 +62,8 @@ macro_rules! register_method_call {
 
 impl<'r, Ctx, T> RegistryAccess<'r, Ctx, T>
 where
-    Ctx: SupportedType,
-    T: for<'a> SupportedType<RefType<'a> = &'a T>,
+    Ctx: EvalType,
+    T: for<'a> EvalType<RefType<'a> = &'a T>,
 {
     register_method_call!(register_method_call_0, 0);
     register_method_call!(register_method_call_1, 1, A1: 0);

@@ -1,4 +1,4 @@
-use crate::{BinOp, DynFn, SupportedType, UnOp};
+use crate::{BinOp, DynFn, EvalType, UnOp};
 use std::{
     any::TypeId,
     collections::{HashMap, HashSet, hash_map::Entry},
@@ -24,11 +24,6 @@ pub(crate) struct MethodCallData {
     pub arg_types: Vec<TypeId>,
 }
 
-// Registry access is passed to SupportedType::register()
-// instead of just passing CompilerRegistry
-//
-// * it prevents calling SupportedType::register() directly, without using register_type()
-// * it already has T type parameter that is needed for most of functions
 pub struct RegistryAccess<'r, Ctx, T> {
     pub(super) registry: &'r mut CompilerRegistry,
     ty: PhantomData<(Ctx, T)>,
@@ -54,7 +49,7 @@ pub(crate) struct CompilerRegistry {
 }
 
 impl CompilerRegistry {
-    pub fn register_type<Ctx: SupportedType, T: SupportedType>(
+    pub fn register_type<Ctx: EvalType, T: EvalType>(
         &mut self,
     ) -> Result<(), String> {
         let type_id = TypeId::of::<T>();
@@ -66,8 +61,8 @@ impl CompilerRegistry {
     }
 }
 
-impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
-    pub fn register_type<T2: SupportedType>(&mut self) -> Result<(), String> {
+impl<'r, Ctx: EvalType, T: EvalType> RegistryAccess<'r, Ctx, T> {
+    pub fn register_type<T2: EvalType>(&mut self) -> Result<(), String> {
         self.registry.register_type::<Ctx, T2>()
     }
 
@@ -77,7 +72,7 @@ impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
         cast_fn: for<'a> fn(&'a Ctx, T::RefType<'a>) -> To::RefType<'a>,
     ) -> Result<(), String>
     where
-        To: SupportedType,
+        To: EvalType,
     {
         let key = (TypeId::of::<T>(), TypeId::of::<To>());
         let compile_func =
@@ -141,8 +136,8 @@ impl<'r, Ctx: SupportedType, T: SupportedType> RegistryAccess<'r, Ctx, T> {
         field_getter: for<'a> fn(&'a T) -> Field::RefType<'a>,
     ) -> Result<(), String>
     where
-        T: for<'a> SupportedType<RefType<'a> = &'a T>,
-        Field: SupportedType,
+        T: for<'a> EvalType<RefType<'a> = &'a T>,
+        Field: EvalType,
     {
         self.register_type::<Field>()?;
 

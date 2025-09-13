@@ -1,9 +1,9 @@
 use crate::{BinOp, DynFn, RegistryAccess, UnOp};
 
-pub trait SupportedType: SupportedTypeMethods + 'static {
+pub trait EvalType: EvalTypeMethods + 'static {
     type RefType<'a>;
 
-    fn register<Ctx: SupportedType>(
+    fn register<Ctx: EvalType>(
         registry: RegistryAccess<Ctx, Self>,
     ) -> Result<(), String>;
 
@@ -22,8 +22,8 @@ pub trait SupportedType: SupportedTypeMethods + 'static {
 // separate trait for methods
 // because Derive macro do not have access to impl blocks
 // there is a separate procedural macro to implement this trait
-pub trait SupportedTypeMethods: Sized {
-    fn register_methods<Ctx: SupportedType>(
+pub trait EvalTypeMethods: Sized {
+    fn register_methods<Ctx: EvalType>(
         registry: RegistryAccess<Ctx, Self>,
     ) -> Result<(), String> {
         _ = registry;
@@ -33,8 +33,8 @@ pub trait SupportedTypeMethods: Sized {
 
 #[cfg(feature = "nightly")]
 // Blanket implementation with no methods
-impl<T: SupportedType> SupportedTypeMethods for T {
-    default fn register_methods<Ctx: SupportedType>(
+impl<T: EvalType> EvalTypeMethods for T {
+    default fn register_methods<Ctx: EvalType>(
         _registry: RegistryAccess<Ctx, Self>,
     ) -> Result<(), String> {
         Ok(())
@@ -42,15 +42,15 @@ impl<T: SupportedType> SupportedTypeMethods for T {
 }
 
 #[cfg(not(feature = "nightly"))]
-impl SupportedTypeMethods for () {}
-impl SupportedType for () {
+impl EvalTypeMethods for () {}
+impl EvalType for () {
     type RefType<'a> = ();
 
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
         *self
     }
 
-    fn register<Ctx: SupportedType>(
+    fn register<Ctx: EvalType>(
         _registry: RegistryAccess<Ctx, Self>,
     ) -> Result<(), String> {
         Ok(())
@@ -58,15 +58,15 @@ impl SupportedType for () {
 }
 
 #[cfg(not(feature = "nightly"))]
-impl SupportedTypeMethods for i64 {}
-impl SupportedType for i64 {
+impl EvalTypeMethods for i64 {}
+impl EvalType for i64 {
     type RefType<'a> = i64;
 
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
         *self
     }
 
-    fn register<Ctx: SupportedType>(
+    fn register<Ctx: EvalType>(
         mut registry: RegistryAccess<Ctx, Self>,
     ) -> Result<(), String> {
         registry.register_cast::<f64>(|_: &Ctx, value: i64| value as f64)?;
@@ -94,15 +94,15 @@ impl SupportedType for i64 {
 }
 
 #[cfg(not(feature = "nightly"))]
-impl SupportedTypeMethods for f64 {}
-impl SupportedType for f64 {
+impl EvalTypeMethods for f64 {}
+impl EvalType for f64 {
     type RefType<'a> = f64;
 
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
         *self
     }
 
-    fn register<Ctx: SupportedType>(
+    fn register<Ctx: EvalType>(
         mut registry: RegistryAccess<Ctx, Self>,
     ) -> Result<(), String> {
         registry

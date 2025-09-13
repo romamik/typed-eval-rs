@@ -3,7 +3,7 @@ use std::{
     ops::Deref,
 };
 
-use crate::SupportedType;
+use crate::EvalType;
 
 // the function with a dynamically known type
 pub struct DynFn {
@@ -18,7 +18,7 @@ impl DynFn {
     ) -> Self
     where
         Arg: 'static,
-        Ret: SupportedType,
+        Ret: EvalType,
     {
         Self {
             boxed_fun: Box::new(BoxedFn(Box::new(f))),
@@ -30,7 +30,7 @@ impl DynFn {
     pub fn downcast<Arg, Ret>(&self) -> Option<BoxedFn<Arg, Ret>>
     where
         Arg: 'static,
-        Ret: SupportedType,
+        Ret: EvalType,
     {
         self.boxed_fun.as_any().downcast_ref().cloned()
     }
@@ -48,11 +48,11 @@ impl Clone for DynFn {
 // the function with a statically known type
 pub struct BoxedFn<Arg, Ret>(Box<dyn ClonableFn<Arg, Ret>>)
 where
-    Ret: SupportedType;
+    Ret: EvalType;
 
 impl<Arg, Ret> Clone for BoxedFn<Arg, Ret>
 where
-    Ret: SupportedType,
+    Ret: EvalType,
 {
     fn clone(&self) -> Self {
         self.clone_boxed()
@@ -62,7 +62,7 @@ where
 // implementing Deref allows to use the call syntax on the BoxedFn instances
 impl<Arg, Ret> Deref for BoxedFn<Arg, Ret>
 where
-    Ret: SupportedType,
+    Ret: EvalType,
 {
     type Target = Box<dyn ClonableFn<Arg, Ret>>;
     fn deref(&self) -> &Self::Target {
@@ -87,7 +87,7 @@ impl<T: Any + Clone> ClonableAny for T {
 pub trait ClonableFn<Arg, Ret>:
     for<'a> Fn(&'a Arg) -> Ret::RefType<'a>
 where
-    Ret: SupportedType,
+    Ret: EvalType,
 {
     fn clone_boxed(&self) -> BoxedFn<Arg, Ret>;
 }
@@ -95,7 +95,7 @@ where
 // implement ClonableFn for every matching function
 impl<Arg, Ret, F> ClonableFn<Arg, Ret> for F
 where
-    Ret: SupportedType,
+    Ret: EvalType,
     F: for<'a> Fn(&'a Arg) -> Ret::RefType<'a> + Clone + 'static,
 {
     fn clone_boxed(&self) -> BoxedFn<Arg, Ret> {

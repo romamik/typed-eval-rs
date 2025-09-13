@@ -5,14 +5,14 @@ use syn::{Data, DataStruct, DeriveInput, Fields};
 
 #[derive(Debug, FromDeriveInput)]
 #[darling(attributes(typed_eval))]
-struct SupportedTypeOpts {
+struct EvalTypeOpts {
     #[darling(default)]
     no_methods: bool,
 }
 
 #[derive(Debug, FromField)]
 #[darling(attributes(typed_eval))]
-struct SupportedTypeField {
+struct EvalTypeField {
     #[darling(default)]
     ignore: bool,
 
@@ -20,13 +20,13 @@ struct SupportedTypeField {
     rename: Option<String>,
 }
 
-pub fn supported_type_derive_impl(ast: &DeriveInput) -> TokenStream {
-    let struct_opts = SupportedTypeOpts::from_derive_input(ast)
+pub fn eval_type_derive_impl(ast: &DeriveInput) -> TokenStream {
+    let struct_opts = EvalTypeOpts::from_derive_input(ast)
         .expect("Failed to parse struct attributes");
 
     let struct_name = &ast.ident;
 
-    // no_methods - generate an empty SupportedTypeMethods impl for type
+    // no_methods - generate an empty EvalTypeMethods impl for type
     // not needed on nightly
     let methods_impl = struct_opts.no_methods.then(|| {
         #[cfg(feature = "nightly")]
@@ -48,7 +48,7 @@ pub fn supported_type_derive_impl(ast: &DeriveInput) -> TokenStream {
 
         #[cfg(not(feature = "nightly"))]
         quote! {
-            impl typed_eval::SupportedTypeMethods for #struct_name {}
+            impl typed_eval::EvalTypeMethods for #struct_name {}
         }
     });
 
@@ -57,13 +57,11 @@ pub fn supported_type_derive_impl(ast: &DeriveInput) -> TokenStream {
         ..
     }) = &ast.data
     else {
-        panic!(
-            "#[derive(SupportedType) only supports structs with named fields"
-        )
+        panic!("#[derive(EvalType) only supports structs with named fields")
     };
 
     let register_fields = fields.named.iter().map(|field| {
-        let field_opts = SupportedTypeField::from_field(field)
+        let field_opts = EvalTypeField::from_field(field)
             .expect("failed to parse field attributes");
 
         if field_opts.ignore {
@@ -89,14 +87,14 @@ pub fn supported_type_derive_impl(ast: &DeriveInput) -> TokenStream {
     TokenStream::from(quote! {
         #methods_impl
 
-        impl typed_eval::SupportedType for #struct_name {
+        impl typed_eval::EvalType for #struct_name {
             type RefType<'a> = &'a Self;
 
             fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
                 self
             }
 
-            fn register<Ctx: typed_eval::SupportedType>(
+            fn register<Ctx: typed_eval::EvalType>(
                 mut registry: typed_eval::RegistryAccess<Ctx, Self>,
             ) -> Result<(), String> {
                 #(

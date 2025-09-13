@@ -5,9 +5,7 @@ use syn::{
     Type, TypeReference,
 };
 
-pub fn supported_type_methods_impl(
-    impl_block: ItemImpl,
-) -> Result<TokenStream> {
+pub fn eval_type_methods_impl(impl_block: ItemImpl) -> Result<TokenStream> {
     let self_ty = &impl_block.self_ty;
 
     let mut method_regs = Vec::new();
@@ -62,8 +60,8 @@ pub fn supported_type_methods_impl(
     let expanded = quote! {
         #impl_block
 
-        impl typed_eval::SupportedTypeMethods for #self_ty {
-            fn register_methods<Ctx: typed_eval::SupportedType>(
+        impl typed_eval::EvalTypeMethods for #self_ty {
+            fn register_methods<Ctx: typed_eval::EvalType>(
                 mut registry: typed_eval::RegistryAccess<Ctx, Self>,
             ) -> Result<(), String> {
                 #(#method_regs)*
