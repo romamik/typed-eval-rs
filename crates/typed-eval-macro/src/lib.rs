@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "nightly", feature(proc_macro_diagnostic))]
+
 mod supported_type;
 mod supported_type_methods;
 
@@ -6,7 +8,7 @@ use supported_type::supported_type_derive_impl;
 use supported_type_methods::supported_type_methods_impl;
 use syn::{DeriveInput, ItemImpl, parse_macro_input};
 
-#[proc_macro_derive(SupportedType)]
+#[proc_macro_derive(SupportedType, attributes(typed_eval))]
 pub fn supported_type_derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     supported_type_derive_impl(&ast)

@@ -50,6 +50,17 @@ where
 mod tests {
     use crate::*;
 
+    #[derive(SupportedType)]
+    #[typed_eval(no_methods)]
+    struct SomeStruct {
+        #[typed_eval(ignore)]
+        #[allow(unused)]
+        ignored_field: String,
+
+        #[typed_eval(rename = "new_field_name")]
+        old_field_name: i64,
+    }
+
     #[derive(Debug, PartialEq, SupportedType)]
     struct User {
         // name: String,
@@ -83,6 +94,7 @@ mod tests {
         bar: f64,
         user: User,
         user_b: User,
+        some_struct: SomeStruct,
     }
 
     #[supported_type_methods]
@@ -107,6 +119,10 @@ mod tests {
             user_b: User {
                 // name: "Alice".to_string(),
                 age: 40,
+            },
+            some_struct: SomeStruct {
+                ignored_field: "Hello".into(),
+                old_field_name: 10,
             },
         };
 
@@ -146,5 +162,11 @@ mod tests {
         assert_eq!(eval::<_, ()>("user.return_nothing()", &ctx), Ok(()));
 
         assert_eq!(eval::<_, i64>("get_user(0).age", &ctx), Ok(45));
+
+        assert!(eval::<_, i64>("some_struct.ignored_field", &ctx).is_err(),);
+
+        // renamed field
+        assert!(eval::<_, i64>("some_struct.old_field_name", &ctx).is_err());
+        assert_eq!(eval::<_, i64>("some_struct.new_field_name", &ctx), Ok(10));
     }
 }

@@ -1,9 +1,56 @@
+use darling::{FromDeriveInput, FromField};
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, DataStruct, DeriveInput, Fields};
 
+#[derive(Debug, FromDeriveInput)]
+#[darling(attributes(typed_eval))]
+struct SupportedTypeOpts {
+    #[darling(default)]
+    no_methods: bool,
+}
+
+#[derive(Debug, FromField)]
+#[darling(attributes(typed_eval))]
+struct SupportedTypeField {
+    #[darling(default)]
+    ignore: bool,
+
+    #[darling(default)]
+    rename: Option<String>,
+}
+
 pub fn supported_type_derive_impl(ast: &DeriveInput) -> TokenStream {
+    let struct_opts = SupportedTypeOpts::from_derive_input(ast)
+        .expect("Failed to parse struct attributes");
+
     let struct_name = &ast.ident;
+
+    // no_methods - generate an empty SupportedTypeMethods impl for type
+    // not needed on nightly
+    let methods_impl = struct_opts.no_methods.then(|| {
+        #[cfg(feature = "nightly")]
+        {
+            use syn::spanned::Spanned;
+
+            let attrs_span = ast
+                .attrs
+                .iter()
+                .fold(struct_name.span(), |a, b| a.join(b.span()).unwrap());
+            proc_macro::Diagnostic::spanned(
+                attrs_span.unwrap(),
+                proc_macro::Level::Note,
+                "#[typed_eval(no_methods)] is not needed with feature=`nightly`"
+            )
+            .emit();
+            quote! {}
+        }
+
+        #[cfg(not(feature = "nightly"))]
+        quote! {
+            impl typed_eval::SupportedTypeMethods for #struct_name {}
+        }
+    });
 
     let Data::Struct(DataStruct {
         fields: Fields::Named(fields),
@@ -16,11 +63,19 @@ pub fn supported_type_derive_impl(ast: &DeriveInput) -> TokenStream {
     };
 
     let register_fields = fields.named.iter().map(|field| {
+        let field_opts = SupportedTypeField::from_field(field)
+            .expect("failed to parse field attributes");
+
+        if field_opts.ignore {
+            return quote! {};
+        }
+
         let field_name = field
             .ident
             .as_ref()
             .expect("it is a struct with named fields");
-        let field_name_str = field_name.to_string();
+        let field_name_str =
+            field_opts.rename.unwrap_or_else(|| field_name.to_string());
         let field_type = &field.ty;
 
         quote! {
@@ -32,6 +87,8 @@ pub fn supported_type_derive_impl(ast: &DeriveInput) -> TokenStream {
     });
 
     TokenStream::from(quote! {
+        #methods_impl
+
         impl typed_eval::SupportedType for #struct_name {
             type RefType<'a> = &'a Self;
 
