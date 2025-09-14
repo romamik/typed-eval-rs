@@ -1,22 +1,20 @@
+use crate::{BinOp, DynFn, RegistryAccess, Result, TypeInfo, UnOp};
 use std::borrow::Cow;
-
-use crate::{BinOp, DynFn, RegistryAccess, UnOp};
 
 pub trait EvalType: EvalTypeMethods + 'static {
     type RefType<'a>;
 
-    fn register<Ctx: EvalType>(
-        registry: RegistryAccess<Ctx, Self>,
-    ) -> Result<(), String>;
+    fn type_info() -> TypeInfo;
 
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a>;
 
-    fn make_dyn_fn<Ctx>(
+    fn register<Ctx: EvalType>(
+        registry: RegistryAccess<Ctx, Self>,
+    ) -> Result<()>;
+
+    fn make_dyn_fn<Ctx: EvalType>(
         f: impl for<'a> Fn(&'a Ctx) -> Self::RefType<'a> + Clone + 'static,
-    ) -> DynFn
-    where
-        Ctx: 'static,
-    {
+    ) -> DynFn {
         DynFn::new::<Ctx, Self>(f)
     }
 }
@@ -27,7 +25,7 @@ pub trait EvalType: EvalTypeMethods + 'static {
 pub trait EvalTypeMethods: Sized {
     fn register_methods<Ctx: EvalType>(
         registry: RegistryAccess<Ctx, Self>,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         _ = registry;
         Ok(())
     }
@@ -38,7 +36,7 @@ pub trait EvalTypeMethods: Sized {
 impl<T: EvalType> EvalTypeMethods for T {
     default fn register_methods<Ctx: EvalType>(
         _registry: RegistryAccess<Ctx, Self>,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         Ok(())
     }
 }
@@ -48,13 +46,17 @@ impl EvalTypeMethods for () {}
 impl EvalType for () {
     type RefType<'a> = ();
 
+    fn type_info() -> TypeInfo {
+        TypeInfo::new::<Self>(|| "void".into())
+    }
+
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
         *self
     }
 
     fn register<Ctx: EvalType>(
         _registry: RegistryAccess<Ctx, Self>,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         Ok(())
     }
 }
@@ -64,13 +66,17 @@ impl EvalTypeMethods for i64 {}
 impl EvalType for i64 {
     type RefType<'a> = i64;
 
+    fn type_info() -> TypeInfo {
+        TypeInfo::new::<Self>(|| "i64".into())
+    }
+
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
         *self
     }
 
     fn register<Ctx: EvalType>(
         mut registry: RegistryAccess<Ctx, Self>,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         registry.register_cast::<f64>(|_: &Ctx, value: i64| value as f64)?;
         registry.register_cast::<String>(|_: &Ctx, value: i64| {
             format!("{value}").into()
@@ -103,13 +109,17 @@ impl EvalTypeMethods for f64 {}
 impl EvalType for f64 {
     type RefType<'a> = f64;
 
+    fn type_info() -> TypeInfo {
+        TypeInfo::new::<Self>(|| "f64".into())
+    }
+
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
         *self
     }
 
     fn register<Ctx: EvalType>(
         mut registry: RegistryAccess<Ctx, Self>,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         registry.register_cast::<String>(|_: &Ctx, value: f64| {
             format!("{value}").into()
         })?;
@@ -141,13 +151,17 @@ impl EvalTypeMethods for String {}
 impl EvalType for String {
     type RefType<'a> = Cow<'a, str>;
 
+    fn type_info() -> TypeInfo {
+        TypeInfo::new::<Self>(|| "String".into())
+    }
+
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
         self.into()
     }
 
     fn register<Ctx: EvalType>(
         mut registry: RegistryAccess<Ctx, Self>,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         registry.register_bin_op(
             BinOp::Add,
             |_: &Ctx, lhs: Self::RefType<'_>, rhs: Self::RefType<'_>| lhs + rhs,
@@ -155,3 +169,47 @@ impl EvalType for String {
         Ok(())
     }
 }
+
+macro_rules! impl_eval_type_for_tuples {
+    // Match one or more types in a tuple
+    ( $( $name:ident ),+ ) => {
+        #[cfg(not(feature = "nightly"))]
+        impl< $( $name ),+ > EvalTypeMethods for ( $( $name ),+ ) {}
+
+        impl< $( $name ),+ > EvalType for ( $( $name ),+ )
+        where
+            $( $name: EvalType ),+
+        {
+            type RefType<'a> = &'a Self;
+
+            fn type_info() -> TypeInfo {
+                TypeInfo::new::<Self>(|| {
+                    let mut s = String::from("(");
+                    $(
+                        s.push_str($name::type_info().type_name().as_ref());
+                        s.push_str(", ");
+                    )+
+                    // Remove the trailing ", "
+                    s.truncate(s.len() - 2);
+                    s.push(')');
+                    s.into()
+                })
+            }
+
+            fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
+                self
+            }
+
+            fn register<Ctx: EvalType>(
+                _registry: RegistryAccess<Ctx, Self>,
+            ) -> Result<()> {
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_eval_type_for_tuples!(T1, T2);
+impl_eval_type_for_tuples!(T1, T2, T3);
+impl_eval_type_for_tuples!(T1, T2, T3, T4);
+impl_eval_type_for_tuples!(T1, T2, T3, T4, T5);

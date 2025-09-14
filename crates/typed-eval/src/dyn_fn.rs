@@ -1,14 +1,10 @@
-use std::{
-    any::{Any, TypeId},
-    ops::Deref,
-};
-
-use crate::EvalType;
+use crate::{Error, EvalType, Result, TypeInfo};
+use std::{any::Any, ops::Deref};
 
 // the function with a dynamically known type
 pub struct DynFn {
-    pub arg_type: TypeId,
-    pub ret_type: TypeId,
+    pub arg_type: TypeInfo,
+    pub ret_type: TypeInfo,
     boxed_fun: Box<dyn ClonableAny>,
 }
 
@@ -17,22 +13,31 @@ impl DynFn {
         f: impl for<'a> Fn(&'a Arg) -> Ret::RefType<'a> + Clone + 'static,
     ) -> Self
     where
-        Arg: 'static,
+        Arg: EvalType,
         Ret: EvalType,
     {
         Self {
             boxed_fun: Box::new(BoxedFn(Box::new(f))),
-            arg_type: TypeId::of::<Arg>(),
-            ret_type: TypeId::of::<Ret>(),
+            arg_type: Arg::type_info(),
+            ret_type: Ret::type_info(),
         }
     }
 
-    pub fn downcast<Arg, Ret>(&self) -> Option<BoxedFn<Arg, Ret>>
+    pub fn downcast<Arg, Ret>(&self) -> Result<BoxedFn<Arg, Ret>>
     where
-        Arg: 'static,
+        Arg: EvalType,
         Ret: EvalType,
     {
-        self.boxed_fun.as_any().downcast_ref().cloned()
+        self.boxed_fun
+            .as_any()
+            .downcast_ref()
+            .cloned()
+            .ok_or_else(|| Error::InternalDynFnDowncastError {
+                expected_arg: Arg::type_info(),
+                expected_ret: Ret::type_info(),
+                got_arg: self.arg_type,
+                got_ret: self.ret_type,
+            })
     }
 }
 

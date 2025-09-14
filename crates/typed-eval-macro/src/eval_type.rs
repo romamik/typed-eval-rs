@@ -25,6 +25,7 @@ pub fn eval_type_derive_impl(ast: &DeriveInput) -> TokenStream {
         .expect("Failed to parse struct attributes");
 
     let struct_name = &ast.ident;
+    let struct_name_str = struct_name.to_string();
 
     // no_methods - generate an empty EvalTypeMethods impl for type
     // not needed on nightly
@@ -90,13 +91,17 @@ pub fn eval_type_derive_impl(ast: &DeriveInput) -> TokenStream {
         impl typed_eval::EvalType for #struct_name {
             type RefType<'a> = &'a Self;
 
+            fn type_info() -> typed_eval::TypeInfo {
+                typed_eval::TypeInfo::new::<Self>(|| #struct_name_str.into())
+            }
+
             fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
                 self
             }
 
             fn register<Ctx: typed_eval::EvalType>(
                 mut registry: typed_eval::RegistryAccess<Ctx, Self>,
-            ) -> Result<(), String> {
+            ) -> typed_eval::Result<()> {
                 #(
                     #register_fields
                 )*

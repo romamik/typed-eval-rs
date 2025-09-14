@@ -1,9 +1,6 @@
-use typed_eval::{Compiler, EvalType};
+use typed_eval::{Compiler, EvalType, Result};
 
-pub fn eval<'a, Ctx, Ret>(
-    input: &str,
-    ctx: &'a Ctx,
-) -> Result<Ret::RefType<'a>, String>
+pub fn eval<'a, Ctx, Ret>(input: &str, ctx: &'a Ctx) -> Result<Ret::RefType<'a>>
 where
     Ctx: EvalType,
     Ret: EvalType,

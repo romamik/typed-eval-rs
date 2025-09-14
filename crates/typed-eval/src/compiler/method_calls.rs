@@ -1,14 +1,13 @@
 use super::try_insert;
-use crate::{DynFn, EvalType, MethodCallData, RegistryAccess};
-use std::any::TypeId;
+use crate::{DynFn, Error, EvalType, MethodCallData, RegistryAccess, Result};
 
 macro_rules! register_method_call {
     ($name:ident, $count:tt $(, $arg:ident : $idx:tt )* ) => {
         pub fn $name<$($arg,)* Ret>(
             &mut self,
-            method_name: &'static str,
+            method: &'static str,
             method_fn: for<'a> fn(&'a T $(, $arg::RefType<'a> )* ) -> Ret::RefType<'a>,
-        ) -> Result<(), String>
+        ) -> Result<()>
         where
             $($arg: EvalType,)*
             Ret: EvalType,
@@ -20,24 +19,18 @@ macro_rules! register_method_call {
 
             let compile_fn = Box::new(
                 #[allow(unused_mut, non_snake_case)]
-                move |object: DynFn, mut args: Vec<DynFn>| -> Result<DynFn, String> {
+                move |object: DynFn, mut args: Vec<DynFn>| -> Result<DynFn> {
                     if args.len() != $count {
-                        return Err(format!(
-                            "Expected {} arguments, got {}",
-                            $count,
-                            args.len()
-                        ));
+                        return Err(Error::InternalArgCountMismatch { expected: $count, got: args.len() });
                     }
 
                     $(
                         let $arg = args[$idx]
-                            .downcast::<Ctx, $arg>()
-                            .ok_or(format!("Failed to downcast argument {}", $idx + 1))?;
+                            .downcast::<Ctx, $arg>()?;
                     )*
 
                     let object = object
-                        .downcast::<Ctx, T>()
-                        .ok_or("Failed to downcast object".to_string())?;
+                        .downcast::<Ctx, T>()?;
 
                     Ok(Ret::make_dyn_fn(move |ctx: &Ctx| {
                         method_fn(object(ctx) $(, $arg(ctx) )* )
@@ -45,15 +38,20 @@ macro_rules! register_method_call {
                 },
             );
 
-            let key = (TypeId::of::<T>(), method_name);
-            let arg_types = vec![$(TypeId::of::<$arg>(),)*];
+            let ty = T::type_info();
+            let arg_types = vec![$($arg::type_info(),)*];
 
             let data = MethodCallData {
                 compile_fn,
                 arg_types,
             };
 
-            try_insert(&mut self.registry.method_calls, key, data)
+            try_insert(
+                &mut self.registry.method_calls,
+                (ty, method),
+                data,
+                || Error::DuplicateMethod { ty, method }
+            )
         }
     };
 }

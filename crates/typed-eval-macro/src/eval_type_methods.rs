@@ -63,7 +63,7 @@ pub fn eval_type_methods_impl(impl_block: ItemImpl) -> Result<TokenStream> {
         impl typed_eval::EvalTypeMethods for #self_ty {
             fn register_methods<Ctx: typed_eval::EvalType>(
                 mut registry: typed_eval::RegistryAccess<Ctx, Self>,
-            ) -> Result<(), String> {
+            ) -> typed_eval::Result<()> {
                 #(#method_regs)*
                 Ok(())
             }
