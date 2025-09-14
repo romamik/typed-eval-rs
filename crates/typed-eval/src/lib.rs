@@ -4,18 +4,16 @@
 extern crate self as typed_eval;
 
 mod compiler;
-mod compiler_registry;
 mod dyn_fn;
 mod eval_type;
 mod expr;
-mod expr_parser;
+mod parser;
 
 pub use compiler::*;
-pub use compiler_registry::*;
 pub use dyn_fn::*;
 pub use eval_type::*;
 pub use expr::*;
-pub use expr_parser::*;
+pub use parser::*;
 
 pub use typed_eval_macro::{EvalType, eval_type_methods};
 

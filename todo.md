@@ -1,0 +1,12 @@
+What's left until "finished":
+- [ ] String support
+- [x] Better compiler interface: accept string input instead of Expr
+- [ ] Replace String errors with custom enum
+- [ ] Positional information in Errors
+  - [ ] Add positional information to Expr
+  - [ ] Add positional information to Errors
+  - [ ] Support multiple Errors at once
+  - [ ] Parser recovery (multiple errors from Parser)
+- [ ] Some sort of documentation
+- [ ] Array access
+- [ ] Options

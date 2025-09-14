@@ -1,4 +1,7 @@
-use crate::{BoxedFn, CompilerRegistry, DynFn, EvalType, Expr, MethodCallData};
+use crate::{
+    BoxedFn, CompilerRegistry, DynFn, EvalType, Expr, MethodCallData,
+    parse_expr,
+};
 use std::{any::TypeId, marker::PhantomData};
 
 pub struct Compiler<Ctx> {
@@ -21,6 +24,58 @@ impl<Ctx: EvalType> Compiler<Ctx> {
             registry,
             ctx_ty: PhantomData,
         })
+    }
+
+    pub fn compile<Ret: EvalType>(
+        &self,
+        input: &str,
+    ) -> Result<BoxedFn<Ctx, Ret>, String> {
+        let dyn_fn = self.compile_dyn(input)?;
+        let casted_fn = self.cast(dyn_fn, TypeId::of::<Ret>())?;
+        casted_fn
+            .downcast::<Ctx, Ret>()
+            .ok_or_else(|| "Compiler error: type mismatch".to_string())
+    }
+
+    pub fn compile_dyn(&self, input: &str) -> Result<DynFn, String> {
+        let expr = parse_expr(input);
+        if expr.has_errors() || !expr.has_output() {
+            let errors = expr
+                .errors()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            Err(format!("Error parsing expression: {}", errors))?;
+        }
+
+        self.compile_expr(expr.output().unwrap())
+    }
+
+    fn compile_expr(&self, expr: &Expr) -> Result<DynFn, String> {
+        match expr {
+            &Expr::Int(val) => Ok(DynFn::new::<_, i64>(move |_ctx: &Ctx| val)),
+
+            &Expr::Float(val) => {
+                Ok(DynFn::new::<_, f64>(move |_ctx: &Ctx| val))
+            }
+
+            Expr::String(_) => Err("Strings literals are not supported".into()),
+
+            Expr::Var(var_name) => self.compile_variable(var_name),
+
+            Expr::UnOp(op, rhs) => self.compile_unary_op(op, rhs),
+
+            Expr::BinOp(op, lhs, rhs) => self.compile_binary_op(op, lhs, rhs),
+
+            Expr::FieldAccess(obj, field_name) => {
+                let obj_fn = self.compile_expr(obj)?;
+                self.compile_field_access(obj_fn, field_name)
+            }
+
+            Expr::FuncCall(func, args) => {
+                self.compile_function_call(func, args)
+            }
+        }
     }
 
     /// try to cast expression to given type
@@ -169,43 +224,5 @@ impl<Ctx: EvalType> Compiler<Ctx> {
             }
             _ => Err("Unsupported function call".into()),
         }
-    }
-
-    pub fn compile_expr(&self, expr: &Expr) -> Result<DynFn, String> {
-        match expr {
-            &Expr::Int(val) => Ok(DynFn::new::<_, i64>(move |_ctx: &Ctx| val)),
-
-            &Expr::Float(val) => {
-                Ok(DynFn::new::<_, f64>(move |_ctx: &Ctx| val))
-            }
-
-            Expr::String(_) => Err("Strings literals are not supported".into()),
-
-            Expr::Var(var_name) => self.compile_variable(var_name),
-
-            Expr::UnOp(op, rhs) => self.compile_unary_op(op, rhs),
-
-            Expr::BinOp(op, lhs, rhs) => self.compile_binary_op(op, lhs, rhs),
-
-            Expr::FieldAccess(obj, field_name) => {
-                let obj_fn = self.compile_expr(obj)?;
-                self.compile_field_access(obj_fn, field_name)
-            }
-
-            Expr::FuncCall(func, args) => {
-                self.compile_function_call(func, args)
-            }
-        }
-    }
-
-    pub fn compile<Ret: EvalType>(
-        &self,
-        expr: &Expr,
-    ) -> Result<BoxedFn<Ctx, Ret>, String> {
-        let dyn_fn = self.compile_expr(expr)?;
-        let casted_fn = self.cast(dyn_fn, TypeId::of::<Ret>())?;
-        casted_fn
-            .downcast::<Ctx, Ret>()
-            .ok_or_else(|| "Compiler error: type mismatch".to_string())
     }
 }

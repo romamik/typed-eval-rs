@@ -1,4 +1,17 @@
-use typed_eval::{Compiler, EvalType, parse_expr};
+use typed_eval::{Compiler, EvalType};
+
+pub fn test_eval<'a, Ctx, Ret>(
+    input: &str,
+    ctx: &'a Ctx,
+    expected: Result<Ret::RefType<'a>, ()>,
+) where
+    Ctx: EvalType,
+    Ret: EvalType,
+    Ret::RefType<'a>: std::fmt::Debug + PartialEq,
+{
+    let result = eval::<Ctx, Ret>(input, ctx).map_err(|_| ());
+    assert_eq!(result, expected)
+}
 
 pub fn eval<'a, Ctx, Ret>(
     input: &str,
@@ -8,17 +21,7 @@ where
     Ctx: EvalType,
     Ret: EvalType,
 {
-    let expr = parse_expr(input);
-    if expr.has_errors() || !expr.has_output() {
-        let errors = expr
-            .errors()
-            .map(|e| e.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        Err(format!("Error parsing expression: {}", errors))?;
-    }
-
-    let compiler = Compiler::<Ctx>::new().unwrap();
-    let compiled_expr = compiler.compile::<Ret>(expr.output().unwrap())?;
-    Ok(compiled_expr(ctx))
+    let compiler = Compiler::<Ctx>::new()?;
+    let compiled_fn = compiler.compile::<Ret>(input)?;
+    Ok(compiled_fn(ctx))
 }

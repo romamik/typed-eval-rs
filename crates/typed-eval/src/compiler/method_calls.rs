@@ -1,7 +1,5 @@
 use super::try_insert;
-use crate::{
-    DynFn, EvalType, RegistryAccess, compiler_registry::MethodCallData,
-};
+use crate::{DynFn, EvalType, MethodCallData, RegistryAccess};
 use std::any::TypeId;
 
 macro_rules! register_method_call {
