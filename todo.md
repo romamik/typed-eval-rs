@@ -1,5 +1,5 @@
 What's left until "finished":
-- [ ] String support
+- [x] String support
 - [x] Better compiler interface: accept string input instead of Expr
 - [ ] Replace String errors with custom enum
 - [ ] Positional information in Errors

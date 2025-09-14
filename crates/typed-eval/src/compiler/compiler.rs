@@ -16,6 +16,7 @@ impl<Ctx: EvalType> Compiler<Ctx> {
         // Register literal types
         registry.register_type::<Ctx, i64>()?;
         registry.register_type::<Ctx, f64>()?;
+        registry.register_type::<Ctx, String>()?;
 
         // Register context type
         registry.register_type::<Ctx, Ctx>()?;
@@ -59,7 +60,10 @@ impl<Ctx: EvalType> Compiler<Ctx> {
                 Ok(DynFn::new::<_, f64>(move |_ctx: &Ctx| val))
             }
 
-            Expr::String(_) => Err("Strings literals are not supported".into()),
+            Expr::String(s) => {
+                let s = s.clone();
+                Ok(DynFn::new::<_, String>(move |_ctx: &Ctx| s.clone().into()))
+            }
 
             Expr::Var(var_name) => self.compile_variable(var_name),
 
@@ -192,7 +196,7 @@ impl<Ctx: EvalType> Compiler<Ctx> {
         let Some(compile_fn) =
             self.registry.binary_operations.get(&(*op, lhs_fn.ret_type))
         else {
-            Err(format!("Unsupported binary operation {:?}", op))?
+            Err(format!("Unsupported binary operation {:?}", op,))?
         };
         compile_fn(lhs_fn, rhs_fn)
     }

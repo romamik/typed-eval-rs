@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{BinOp, DynFn, RegistryAccess, UnOp};
 
 pub trait EvalType: EvalTypeMethods + 'static {
@@ -70,6 +72,9 @@ impl EvalType for i64 {
         mut registry: RegistryAccess<Ctx, Self>,
     ) -> Result<(), String> {
         registry.register_cast::<f64>(|_: &Ctx, value: i64| value as f64)?;
+        registry.register_cast::<String>(|_: &Ctx, value: i64| {
+            format!("{value}").into()
+        })?;
 
         registry
             .register_bin_op(BinOp::Add, |_: &Ctx, lhs: i64, rhs: i64| {
@@ -105,6 +110,10 @@ impl EvalType for f64 {
     fn register<Ctx: EvalType>(
         mut registry: RegistryAccess<Ctx, Self>,
     ) -> Result<(), String> {
+        registry.register_cast::<String>(|_: &Ctx, value: f64| {
+            format!("{value}").into()
+        })?;
+
         registry
             .register_bin_op(BinOp::Add, |_: &Ctx, lhs: f64, rhs: f64| {
                 lhs + rhs
@@ -123,6 +132,26 @@ impl EvalType for f64 {
             })?;
         registry.register_un_op(UnOp::Neg, |_: &Ctx, rhs: f64| -rhs)?;
         registry.register_un_op(UnOp::Plus, |_: &Ctx, rhs: f64| rhs)?;
+        Ok(())
+    }
+}
+
+#[cfg(not(feature = "nightly"))]
+impl EvalTypeMethods for String {}
+impl EvalType for String {
+    type RefType<'a> = Cow<'a, str>;
+
+    fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
+        self.into()
+    }
+
+    fn register<Ctx: EvalType>(
+        mut registry: RegistryAccess<Ctx, Self>,
+    ) -> Result<(), String> {
+        registry.register_bin_op(
+            BinOp::Add,
+            |_: &Ctx, lhs: Self::RefType<'_>, rhs: Self::RefType<'_>| lhs + rhs,
+        )?;
         Ok(())
     }
 }
