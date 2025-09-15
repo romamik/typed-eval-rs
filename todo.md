@@ -1,7 +1,7 @@
 What's left until "finished":
 - [x] String support
 - [x] Better compiler interface: accept string input instead of Expr
-- [ ] Replace String errors with custom enum
+- [x] Replace String errors with custom enum 
 - [ ] Positional information in Errors
   - [ ] Add positional information to Expr
   - [ ] Add positional information to Errors
