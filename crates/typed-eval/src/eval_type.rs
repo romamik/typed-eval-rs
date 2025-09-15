@@ -47,7 +47,7 @@ impl EvalType for () {
     type RefType<'a> = ();
 
     fn type_info() -> TypeInfo {
-        TypeInfo::new::<Self>(|| "void".into())
+        TypeInfo::new::<Self>("void")
     }
 
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
@@ -67,7 +67,7 @@ impl EvalType for i64 {
     type RefType<'a> = i64;
 
     fn type_info() -> TypeInfo {
-        TypeInfo::new::<Self>(|| "i64".into())
+        TypeInfo::new::<Self>("i64")
     }
 
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
@@ -110,7 +110,7 @@ impl EvalType for f64 {
     type RefType<'a> = f64;
 
     fn type_info() -> TypeInfo {
-        TypeInfo::new::<Self>(|| "f64".into())
+        TypeInfo::new::<Self>("f64")
     }
 
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
@@ -152,7 +152,7 @@ impl EvalType for String {
     type RefType<'a> = Cow<'a, str>;
 
     fn type_info() -> TypeInfo {
-        TypeInfo::new::<Self>(|| "String".into())
+        TypeInfo::new::<Self>("String")
     }
 
     fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
@@ -183,17 +183,7 @@ macro_rules! impl_eval_type_for_tuples {
             type RefType<'a> = &'a Self;
 
             fn type_info() -> TypeInfo {
-                TypeInfo::new::<Self>(|| {
-                    let mut s = String::from("(");
-                    $(
-                        s.push_str($name::type_info().type_name().as_ref());
-                        s.push_str(", ");
-                    )+
-                    // Remove the trailing ", "
-                    s.truncate(s.len() - 2);
-                    s.push(')');
-                    s.into()
-                })
+                TypeInfo::new::<Self>(concat!("Tuple(", $(stringify!($name), ","),*, ")"))
             }
 
             fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {

@@ -110,7 +110,7 @@ impl<Ctx: EvalType> Compiler<Ctx> {
             return Ok((a_casted, b));
         }
 
-        Err(Error::CantCastSameType(a.ret_type, b.ret_type))
+        Err(Error::CantCastSameType(a.ret_type, b.ret_type))?
     }
 
     fn compile_field_access(
@@ -221,7 +221,7 @@ impl<Ctx: EvalType> Compiler<Ctx> {
                 let obj_fn = self.compile_expr(obj)?;
                 self.compile_method_call(obj_fn, field_name, args_fns)
             }
-            _ => Err(Error::UnsupportedFunctionCall),
+            _ => Err(Error::UnsupportedFunctionCall)?,
         }
     }
 }

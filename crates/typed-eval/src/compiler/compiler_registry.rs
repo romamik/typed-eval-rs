@@ -172,7 +172,7 @@ where
     K: Hash + Eq,
 {
     match map.entry(key) {
-        Entry::Occupied(_) => return Err(make_err()),
+        Entry::Occupied(_) => Err(make_err())?,
         Entry::Vacant(vacant) => {
             vacant.insert(value);
         }

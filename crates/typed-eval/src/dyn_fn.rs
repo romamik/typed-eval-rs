@@ -28,16 +28,14 @@ impl DynFn {
         Arg: EvalType,
         Ret: EvalType,
     {
-        self.boxed_fun
-            .as_any()
-            .downcast_ref()
-            .cloned()
-            .ok_or_else(|| Error::InternalDynFnDowncastError {
+        Ok(self.boxed_fun.as_any().downcast_ref().cloned().ok_or_else(
+            || Error::InternalDynFnDowncastError {
                 expected_arg: Arg::type_info(),
                 expected_ret: Ret::type_info(),
                 got_arg: self.arg_type,
                 got_ret: self.ret_type,
-            })
+            },
+        )?)
     }
 }
 

@@ -21,7 +21,7 @@ macro_rules! register_method_call {
                 #[allow(unused_mut, non_snake_case)]
                 move |object: DynFn, mut args: Vec<DynFn>| -> Result<DynFn> {
                     if args.len() != $count {
-                        return Err(Error::InternalArgCountMismatch { expected: $count, got: args.len() });
+                        Err(Error::InternalArgCountMismatch { expected: $count, got: args.len() })?;
                     }
 
                     $(

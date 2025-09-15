@@ -92,7 +92,7 @@ pub fn eval_type_derive_impl(ast: &DeriveInput) -> TokenStream {
             type RefType<'a> = &'a Self;
 
             fn type_info() -> typed_eval::TypeInfo {
-                typed_eval::TypeInfo::new::<Self>(|| #struct_name_str.into())
+                typed_eval::TypeInfo::new::<Self>(#struct_name_str)
             }
 
             fn to_ref_type<'a>(&'a self) -> Self::RefType<'a> {
