@@ -1,3 +1,6 @@
+fmt:
+    cargo +nightly fmt
+
 test-nightly:
     cargo +nightly test --features nightly
 

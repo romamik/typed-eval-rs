@@ -18,7 +18,6 @@ pub use eval_type::*;
 pub use expr::*;
 pub use parser::*;
 pub use type_info::*;
-
 pub use typed_eval_macro::{EvalType, eval_type_methods};
 
 #[cfg(feature = "nightly")]

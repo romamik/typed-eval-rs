@@ -1,6 +1,5 @@
-use thiserror::Error;
-
 use crate::{BinOp, TypeInfo, UnOp};
+use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Box<Error>>;
 
