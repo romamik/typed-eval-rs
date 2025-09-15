@@ -3,7 +3,7 @@
 mod common;
 
 use common::*;
-use typed_eval::{EvalType, eval_type_methods};
+use typed_eval::{Error, EvalType, eval_type_methods};
 
 #[test]
 fn test_math_operations() {
@@ -91,8 +91,22 @@ fn test_struct_field_attributes() {
         },
     };
 
-    assert!(eval::<_, i64>("s.ignored", &ctx).is_err());
-    assert!(eval::<_, i64>("s.original", &ctx).is_err());
+    assert_eq!(
+        eval::<_, i64>("s.ignored", &ctx),
+        Err(Error::FieldNotFound {
+            ty: S::type_info(),
+            field: "ignored".into()
+        }
+        .into())
+    );
+    assert_eq!(
+        eval::<_, i64>("s.original", &ctx),
+        Err(Error::FieldNotFound {
+            ty: S::type_info(),
+            field: "original".into()
+        }
+        .into())
+    );
     assert_eq!(eval::<_, i64>("s.renamed", &ctx), Ok(2));
 }
 
