@@ -60,8 +60,8 @@ fn expr_parser<'src>()
         ))
         .repeated()
         .collect::<String>()
-        .map_with(|s, e| Expr::String(s.with_span(e.span())))
-        .delimited_by(just('"'), just('"'));
+        .delimited_by(just('"'), just('"'))
+        .map_with(|s, e| Expr::String(s.with_span(e.span())));
 
         let var = text::ident::<&str, _>().map_with(|s: &str, extra| {
             Expr::Var(s.to_owned().with_span(extra.span()))
@@ -78,11 +78,11 @@ fn expr_parser<'src>()
         let postfix = atom.foldl(
             choice((
                 //field access
-                just::<_, &str, _>('.').ignore_then(text::ident()).map_with(
+                just('.').ignore_then((text::ident::<&str, _>()).map_with(
                     |field: &str, e| {
                         Postfix::Field(field.to_string(), e.span().into())
                     },
-                ),
+                )),
                 // function call
                 expr.separated_by(just(','))
                     .collect::<Vec<Expr>>()
@@ -147,7 +147,7 @@ fn expr_parser<'src>()
 
         #[allow(clippy::let_and_return)]
         sum
-    })
+    }).padded().then_ignore(end())
 }
 
 #[cfg(test)]
@@ -380,5 +380,59 @@ mod tests {
                 vec![].test_span(),
             )
         );
+    }
+
+    #[test]
+    fn test_spans_match_input_substrings() {
+        let input = r#"   foo.bar(1 + -2, "hi\t")   "#;
+        let expr = parse_expr(input);
+        dbg!(&expr);
+        let expr = expr.into_output().unwrap();
+
+        // Recursively walk the expression tree and assert that
+        // expr.span() corresponds to the substring of `input`.
+        fn check(expr: &Expr, input: &str) {
+            let span = expr.span();
+            let text = &input[span.start..span.end];
+
+            match expr {
+                Expr::Int(val) => assert_eq!(text, &val.to_string()),
+                Expr::Float(val) => assert_eq!(text, &val.to_string()),
+                Expr::String(val) => {
+                    // Just check that substring starts/ends with quotes
+                    assert!(
+                        text.starts_with('"') && text.ends_with('"'),
+                        "Text is not in quotes: {text}",
+                    );
+                    // We cannot check text for equality because of escape symbols
+                    // Check the string lengths
+                    assert!(text.len() == 2 || !val.is_empty());
+                }
+                Expr::Var(val) => assert_eq!(text, &**val),
+                Expr::UnOp(_, rhs) => check(rhs, input),
+                Expr::BinOp(_, lhs, rhs) => {
+                    check(lhs, input);
+                    check(rhs, input);
+                }
+                Expr::FieldAccess(lhs, field) => {
+                    check(lhs, input);
+                    assert_eq!(
+                        &input[field.span().start..field.span().end],
+                        &**field
+                    );
+                }
+                Expr::FuncCall(func, args) => {
+                    check(func, input);
+                    for arg in args.iter() {
+                        check(arg, input);
+                    }
+                }
+            }
+        }
+
+        check(&expr, input);
+
+        // And the outermost span should cover the entire input
+        assert_eq!(&input[expr.span().start..expr.span().end], input.trim());
     }
 }
