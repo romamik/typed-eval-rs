@@ -9,6 +9,7 @@ mod error;
 mod eval_type;
 mod expr;
 mod parser;
+mod span;
 mod type_info;
 
 pub use compiler::*;
@@ -17,6 +18,7 @@ pub use error::*;
 pub use eval_type::*;
 pub use expr::*;
 pub use parser::*;
+pub use span::*;
 pub use type_info::*;
 pub use typed_eval_macro::{EvalType, eval_type_methods};
 
