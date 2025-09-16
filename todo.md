@@ -3,7 +3,8 @@ What's left until "finished":
 - [x] Better compiler interface: accept string input instead of Expr
 - [x] Replace String errors with custom enum 
 - [ ] Positional information in Errors
-  - [ ] Add positional information to Expr
+  - [x] Add positional information to Expr
+    - [ ] Test positional information in Expr
   - [ ] Add positional information to Errors
   - [ ] Support multiple Errors at once
   - [ ] Parser recovery (multiple errors from Parser)

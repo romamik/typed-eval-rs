@@ -52,22 +52,28 @@ impl<Ctx: EvalType> Compiler<Ctx> {
 
     fn compile_expr(&self, expr: &Expr) -> Result<DynFn> {
         match expr {
-            &Expr::Int(val) => Ok(DynFn::new::<_, i64>(move |_ctx: &Ctx| val)),
+            Expr::Int(val) => {
+                let val = **val;
+                Ok(DynFn::new::<_, i64>(move |_ctx: &Ctx| val))
+            }
 
-            &Expr::Float(val) => {
+            Expr::Float(val) => {
+                let val = **val;
                 Ok(DynFn::new::<_, f64>(move |_ctx: &Ctx| val))
             }
 
             Expr::String(s) => {
                 let s = s.clone();
-                Ok(DynFn::new::<_, String>(move |_ctx: &Ctx| s.clone().into()))
+                Ok(DynFn::new::<_, String>(move |_ctx: &Ctx| {
+                    (*s).clone().into()
+                }))
             }
 
             Expr::Var(var_name) => self.compile_variable(var_name),
 
-            Expr::UnOp(op, rhs) => self.compile_unary_op(*op, rhs),
+            Expr::UnOp(op, rhs) => self.compile_unary_op(**op, rhs),
 
-            Expr::BinOp(op, lhs, rhs) => self.compile_binary_op(*op, lhs, rhs),
+            Expr::BinOp(op, lhs, rhs) => self.compile_binary_op(**op, lhs, rhs),
 
             Expr::FieldAccess(obj, field_name) => {
                 let obj_fn = self.compile_expr(obj)?;

@@ -1,4 +1,4 @@
-use crate::{BinOp, Expr, UnOp};
+use crate::{BinOp, Expr, Span, UnOp, WithSpan};
 use chumsky::{
     cache::{Cache, Cached},
     prelude::*,
@@ -38,20 +38,20 @@ fn expr_parser<'src>()
                     .or_not(),
             )
             .to_slice()
-            .try_map(|s: &str, span| {
+            .try_map(|s: &str, span: SimpleSpan| {
                 if s.contains(['.', 'e']) {
                     s.parse()
-                        .map(Expr::Float)
+                        .map(|val: f64| Expr::Float(val.with_span(span)))
                         .map_err(|e| Rich::custom(span, e.to_string()))
                 } else {
                     s.parse()
-                        .map(Expr::Int)
+                        .map(|val: i64| Expr::Int(val.with_span(span)))
                         .map_err(|e| Rich::custom(span, e.to_string()))
                 }
             });
 
         let string = choice((
-            none_of("\"\\"),
+            none_of::<_, &str, _>("\"\\"),
             just(r#"\\"#).to('\\'),
             just(r#"\""#).to('"'),
             just(r#"\n"#).to('\n'),
@@ -60,74 +60,89 @@ fn expr_parser<'src>()
         ))
         .repeated()
         .collect::<String>()
-        .map(Expr::String)
+        .map_with(|s, e| Expr::String(s.with_span(e.span())))
         .delimited_by(just('"'), just('"'));
 
-        let var = text::ident().map(|s: &str| Expr::Var(s.to_owned()));
+        let var = text::ident::<&str, _>().map_with(|s: &str, extra| {
+            Expr::Var(s.to_owned().with_span(extra.span()))
+        });
 
         let parens = expr.clone().delimited_by(just('('), just(')'));
 
         let atom = choice((num, string, var, parens)).padded();
 
         enum Postfix {
-            Field(String),
-            Call(Vec<Expr>),
+            Field(String, Span),
+            Call(Vec<Expr>, Span),
         }
         let postfix = atom.foldl(
             choice((
                 //field access
-                just('.')
-                    .ignore_then(text::ident())
-                    .map(|field: &str| Postfix::Field(field.to_string())),
+                just::<_, &str, _>('.').ignore_then(text::ident()).map_with(
+                    |field: &str, e| {
+                        Postfix::Field(field.to_string(), e.span().into())
+                    },
+                ),
                 // function call
                 expr.separated_by(just(','))
                     .collect::<Vec<Expr>>()
                     .delimited_by(just('('), just(')'))
-                    .map(|args: Vec<Expr>| Postfix::Call(args)),
+                    .map_with(|args: Vec<Expr>, extra| {
+                        Postfix::Call(args, extra.span().into())
+                    }),
             ))
             .repeated(),
             |lhs, postfix| match postfix {
-                Postfix::Field(field) => {
-                    Expr::FieldAccess(Box::new(lhs), field)
+                Postfix::Field(field, span) => {
+                    Expr::FieldAccess(Box::new(lhs), field.with_span(span))
                 }
-                Postfix::Call(args) => Expr::FuncCall(Box::new(lhs), args),
+                Postfix::Call(args, span) => {
+                    Expr::FuncCall(Box::new(lhs), args.with_span(span))
+                }
             },
         );
 
-        let unary = one_of("+-")
+        let unary = one_of::<_, &str, _>("+-")
             .padded()
-            .map(|c| match c {
-                '+' => UnOp::Plus,
-                '-' => UnOp::Neg,
+            .map_with(|c, e| match c {
+                '+' => UnOp::Plus.with_span(e.span()),
+                '-' => UnOp::Neg.with_span( e.span()),
                 _ => panic!("unexpected symbol: one_of should not return anything unexpected"),
             })
             .repeated()
-            .foldr(postfix, |op, rhs| Expr::UnOp(op, Box::new(rhs)));
+            .foldr(postfix, |op, rhs| {
+                Expr::UnOp(op, Box::new(rhs))
+    });
 
         let product = unary.clone().foldl(
             one_of("*/")
                 .padded()
-                .map(|c| match c {
-                    '*' => BinOp::Mul,
-                    '/' => BinOp::Div,
+                .map_with(|c, e| match c {
+                    '*' => BinOp::Mul.with_span( e.span()),
+                    '/' => BinOp::Div.with_span(e.span()),
                     _ => panic!("unexpected symbol: one_of should not return anything unexpected"),
                 })
                 .then(unary)
                 .repeated(),
-            |lhs, (op, rhs)| Expr::BinOp(op, Box::new(lhs), Box::new(rhs)),
+            |lhs, (op, rhs)| {
+
+                Expr::BinOp(op, Box::new(lhs), Box::new(rhs))
+            },
         );
 
         let sum = product.clone().foldl(
             one_of("+-")
                 .padded()
-                .map(|c| match c {
-                    '+' => BinOp::Add,
-                    '-' => BinOp::Sub,
+                .map_with(|c,e| match c {
+                    '+' => BinOp::Add.with_span(e.span()),
+                    '-' => BinOp::Sub.with_span(e.span()),
                     _ => panic!("unexpected symbol: one_of should not return anything unexpected"),
                 })
                 .then(product)
                 .repeated(),
-            |lhs, (op, rhs)| Expr::BinOp(op, Box::new(lhs), Box::new(rhs)),
+            |lhs, (op, rhs)| {
+                Expr::BinOp(op, Box::new(lhs), Box::new(rhs))
+            },
         );
 
         #[allow(clippy::let_and_return)]
@@ -153,55 +168,76 @@ mod tests {
 
     #[test]
     fn test_parse_integers_and_floats() {
-        assert_eq!(parse_ok("42"), Expr::Int(42));
-        assert_eq!(parse_ok("0"), Expr::Int(0));
-        assert_eq!(parse_ok("1.1415"), Expr::Float(1.1415));
-        assert_eq!(parse_ok("2e3"), Expr::Float(2000.0));
-        assert_eq!(parse_ok("2e-3"), Expr::Float(2e-3));
+        assert_eq!(parse_ok("42"), Expr::Int(42.test_span()));
+        assert_eq!(parse_ok("0"), Expr::Int(0.test_span()));
+        assert_eq!(parse_ok("1.1415"), Expr::Float(1.1415.test_span()));
+        assert_eq!(parse_ok("2e3"), Expr::Float(2000.0.test_span()));
+        assert_eq!(parse_ok("2e-3"), Expr::Float(2e-3.test_span()));
     }
 
     #[test]
     fn test_parse_strings() {
-        assert_eq!(parse_ok(r#" "Hello" "#), Expr::String("Hello".into()));
+        assert_eq!(
+            parse_ok(r#" "Hello" "#),
+            Expr::String("Hello".to_string().test_span())
+        );
         assert_eq!(
             parse_ok(r#" "\" world\"" "#),
-            Expr::String("\" world\"".into())
+            Expr::String("\" world\"".to_string().test_span())
         );
         assert_eq!(
             parse_ok(r#" "\n\r\t\\" "#),
-            Expr::String("\n\r\t\\".into())
+            Expr::String("\n\r\t\\".to_string().test_span())
         );
     }
 
     #[test]
     fn test_parse_variables() {
-        assert_eq!(parse_ok("x"), Expr::Var("x".to_string()));
-        assert_eq!(parse_ok("foo123"), Expr::Var("foo123".to_string()));
+        assert_eq!(parse_ok("x"), Expr::Var("x".to_string().test_span()));
+        assert_eq!(
+            parse_ok("foo123"),
+            Expr::Var("foo123".to_string().test_span())
+        );
     }
 
     #[test]
     fn test_parse_parentheses() {
         let expr = parse_ok("(42)");
-        assert_eq!(expr, Expr::Int(42));
+        assert_eq!(expr, Expr::Int(42.test_span()));
 
         let expr2 = parse_ok("((3.5))");
-        assert_eq!(expr2, Expr::Float(3.5));
+        assert_eq!(expr2, Expr::Float(3.5.test_span()));
     }
 
     #[test]
     fn test_parse_unary_operators() {
         let expr = parse_ok("-42");
-        assert_eq!(expr, Expr::UnOp(UnOp::Neg, Box::new(Expr::Int(42))));
+        assert_eq!(
+            expr,
+            Expr::UnOp(
+                UnOp::Neg.test_span(),
+                Box::new(Expr::Int(42.test_span())),
+            )
+        );
 
         let expr2 = parse_ok("+3.5");
-        assert_eq!(expr2, Expr::UnOp(UnOp::Plus, Box::new(Expr::Float(3.5))));
+        assert_eq!(
+            expr2,
+            Expr::UnOp(
+                UnOp::Plus.test_span(),
+                Box::new(Expr::Float(3.5.test_span())),
+            )
+        );
 
         let expr3 = parse_ok("+-3.5");
         assert_eq!(
             expr3,
             Expr::UnOp(
-                UnOp::Plus,
-                Box::new(Expr::UnOp(UnOp::Neg, Box::new(Expr::Float(3.5))))
+                UnOp::Plus.test_span(),
+                Box::new(Expr::UnOp(
+                    UnOp::Neg.test_span(),
+                    Box::new(Expr::Float(3.5.test_span())),
+                )),
             )
         );
     }
@@ -212,9 +248,9 @@ mod tests {
         assert_eq!(
             expr,
             Expr::BinOp(
-                BinOp::Add,
-                Box::new(Expr::Int(1)),
-                Box::new(Expr::Int(2)),
+                BinOp::Add.test_span(),
+                Box::new(Expr::Int(1.test_span())),
+                Box::new(Expr::Int(2.test_span())),
             )
         );
 
@@ -222,13 +258,13 @@ mod tests {
         assert_eq!(
             expr2,
             Expr::BinOp(
-                BinOp::Add,
+                BinOp::Add.test_span(),
                 Box::new(Expr::BinOp(
-                    BinOp::Mul,
-                    Box::new(Expr::Int(3)),
-                    Box::new(Expr::Int(4))
+                    BinOp::Mul.test_span(),
+                    Box::new(Expr::Int(3.test_span())),
+                    Box::new(Expr::Int(4.test_span())),
                 )),
-                Box::new(Expr::Int(5))
+                Box::new(Expr::Int(5.test_span())),
             )
         );
     }
@@ -240,10 +276,10 @@ mod tests {
             expr,
             Expr::FieldAccess(
                 Box::new(Expr::FieldAccess(
-                    Box::new(Expr::Var("foo".to_string())),
-                    "bar".to_string()
+                    Box::new(Expr::Var("foo".to_string().test_span())),
+                    "bar".to_string().test_span(),
                 )),
-                "baz".to_string()
+                "baz".to_string().test_span(),
             )
         );
     }
@@ -254,7 +290,10 @@ mod tests {
         let expr = parse_ok("foo()");
         assert_eq!(
             expr,
-            Expr::FuncCall(Box::new(Expr::Var("foo".to_string())), vec![])
+            Expr::FuncCall(
+                Box::new(Expr::Var("foo".to_string().test_span())),
+                vec![].test_span(),
+            )
         );
 
         // Function call with one argument
@@ -262,8 +301,8 @@ mod tests {
         assert_eq!(
             expr2,
             Expr::FuncCall(
-                Box::new(Expr::Var("bar".to_string())),
-                vec![Expr::Int(42)]
+                Box::new(Expr::Var("bar".to_string().test_span())),
+                vec![Expr::Int(42.test_span())].test_span(),
             )
         );
 
@@ -272,8 +311,13 @@ mod tests {
         assert_eq!(
             expr3,
             Expr::FuncCall(
-                Box::new(Expr::Var("baz".to_string())),
-                vec![Expr::Int(1), Expr::Int(2), Expr::Int(3)]
+                Box::new(Expr::Var("baz".to_string().test_span())),
+                vec![
+                    Expr::Int(1.test_span()),
+                    Expr::Int(2.test_span()),
+                    Expr::Int(3.test_span())
+                ]
+                .test_span(),
             )
         );
 
@@ -282,14 +326,19 @@ mod tests {
         assert_eq!(
             expr4,
             Expr::FuncCall(
-                Box::new(Expr::Var("outer".to_string())),
+                Box::new(Expr::Var("outer".to_string().test_span())),
                 vec![
                     Expr::FuncCall(
-                        Box::new(Expr::Var("inner".to_string())),
-                        vec![Expr::Int(1), Expr::Int(2)]
+                        Box::new(Expr::Var("inner".to_string().test_span())),
+                        vec![
+                            Expr::Int(1.test_span()),
+                            Expr::Int(2.test_span())
+                        ]
+                        .test_span(),
                     ),
-                    Expr::Int(3)
+                    Expr::Int(3.test_span())
                 ]
+                .test_span(),
             )
         );
 
@@ -299,10 +348,10 @@ mod tests {
             expr5,
             Expr::FuncCall(
                 Box::new(Expr::FieldAccess(
-                    Box::new(Expr::Var("foo".to_string())),
-                    "bar".to_string()
+                    Box::new(Expr::Var("foo".to_string().test_span())),
+                    "bar".to_string().test_span()
                 )),
-                vec![Expr::Int(5)]
+                vec![Expr::Int(5.test_span())].test_span(),
             )
         );
     }
@@ -314,10 +363,10 @@ mod tests {
             expr,
             Expr::FieldAccess(
                 Box::new(Expr::FuncCall(
-                    Box::new(Expr::Var("foo".to_string())),
-                    vec![]
+                    Box::new(Expr::Var("foo".to_string().test_span())),
+                    vec![].test_span(),
                 )),
-                "field".to_string()
+                "field".to_string().test_span(),
             )
         );
         let expr = parse_ok("foo.field()");
@@ -325,10 +374,10 @@ mod tests {
             expr,
             Expr::FuncCall(
                 Box::new(Expr::FieldAccess(
-                    Box::new(Expr::Var("foo".to_string())),
-                    "field".to_string()
+                    Box::new(Expr::Var("foo".to_string().test_span())),
+                    "field".to_string().test_span(),
                 )),
-                vec![]
+                vec![].test_span(),
             )
         );
     }
