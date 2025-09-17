@@ -59,7 +59,10 @@ pub trait CombineResults {
     fn all_ok(self) -> Result<Self::Output>;
 }
 
-impl<T> CombineResults for Vec<Result<T>> {
+impl<T, E> CombineResults for Vec<std::result::Result<T, E>>
+where
+    E: Into<Errors>,
+{
     type Output = Vec<T>;
 
     fn all_ok(self) -> Result<Self::Output> {
@@ -70,7 +73,7 @@ impl<T> CombineResults for Vec<Result<T>> {
             match res {
                 Ok(v) => values.push(v),
                 Err(e) => {
-                    errors = Errors::combine(errors, e);
+                    errors = Errors::combine(errors, e.into());
                 }
             }
         }
@@ -84,8 +87,10 @@ impl<T> CombineResults for Vec<Result<T>> {
 }
 
 macro_rules! impl_combine_results {
-    ( $( $name:ident ),+ ) => {
-        impl< $( $name ),+ > CombineResults for ( $( Result<$name> ),+ ) {
+    ( $( $name:ident, $err:ident ),+ ) => {
+        impl< $( $name, $err ),+ > CombineResults for ( $( std::result::Result<$name, $err> ),+ )
+        where $( $err: Into<Errors>, )+
+        {
             type Output = ( $( $name ),+ );
 
             #[allow(non_snake_case)]
@@ -98,7 +103,7 @@ macro_rules! impl_combine_results {
                     let $name = match $name {
                         Ok(v) => Some(v),
                         Err(e) => {
-                            errors = Errors::combine(errors, e);
+                            errors = Errors::combine(errors, e.into());
                             None
                         }
                     };
@@ -113,8 +118,8 @@ macro_rules! impl_combine_results {
         }
     };
 }
-impl_combine_results!(A, B);
-impl_combine_results!(A, B, C);
-impl_combine_results!(A, B, C, D);
-impl_combine_results!(A, B, C, D, E);
-impl_combine_results!(A, B, C, D, E, F);
+impl_combine_results!(A, EA, B, EB);
+impl_combine_results!(A, EA, B, EB, C, EC);
+impl_combine_results!(A, EA, B, EB, C, EC, D, ED);
+impl_combine_results!(A, EA, B, EB, C, EC, D, ED, E, EE);
+impl_combine_results!(A, EA, B, EB, C, EC, D, ED, E, EE, F, EF);

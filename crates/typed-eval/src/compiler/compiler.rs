@@ -170,19 +170,21 @@ impl<Ctx: EvalType> Compiler<Ctx> {
             })?
         };
 
-        if arg_types.len() != arguments.len() {
-            Err(Error::ArgCountMismatch {
-                expected: arg_types.len(),
-                got: arguments.len(),
-            })?;
-        }
-
         // cast arguments to arg_types
-        let arguments = arguments
-            .into_iter()
-            .zip(arg_types.iter().copied())
-            .map(|(arg, ty)| self.cast(arg, ty))
-            .collect::<Vec<_>>()
+        let (_, arguments) = (
+            (arg_types.len() == arguments.len()).then_some(()).ok_or(
+                Error::ArgCountMismatch {
+                    expected: arg_types.len(),
+                    got: arguments.len(),
+                },
+            ),
+            arguments
+                .into_iter()
+                .zip(arg_types.iter().copied())
+                .map(|(arg, ty)| self.cast(arg, ty))
+                .collect::<Vec<_>>()
+                .all_ok(),
+        )
             .all_ok()?;
 
         compile_fn(object, arguments)

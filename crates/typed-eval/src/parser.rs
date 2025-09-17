@@ -139,7 +139,7 @@ fn expr_parser<'src>()
             .repeated()
             .foldr(postfix, |op, rhs| {
                 Expr::UnOp(op, Box::new(rhs))
-    });
+            });
 
         let product = unary.clone().foldl(
             one_of("*/")
