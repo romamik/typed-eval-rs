@@ -236,7 +236,8 @@ impl<Ctx: EvalType> Compiler<Ctx> {
         let args_fns = arguments
             .iter()
             .map(|arg| self.compile_expr(arg))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Vec<_>>()
+            .all_ok()?;
 
         let ctx_fn = Ctx::make_dyn_fn(|ctx: &Ctx| Ctx::to_ref_type(ctx));
 
