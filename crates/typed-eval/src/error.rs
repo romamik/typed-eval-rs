@@ -1,10 +1,12 @@
 use crate::{BinOp, TypeInfo, UnOp};
+use chumsky::error::{Rich, RichReason};
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, Box<Error>>;
-
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, PartialEq, Error)]
 pub enum Error {
+    #[error("Invalid float literal: {0}")]
+    InvalidLiteral(String),
+
     #[error("Wrong number of arguments: expected {expected}, got {got}")]
     ArgCountMismatch { expected: usize, got: usize },
 
@@ -44,8 +46,17 @@ pub enum Error {
     #[error("Method `{method}` on type `{ty}` already registered")]
     DuplicateMethod { ty: TypeInfo, method: &'static str },
 
-    #[error("Parse error: {0}")]
-    ParseError(String),
+    #[error("Parse error: expected: {expected:?}, found {found:?}")]
+    ParseError {
+        expected: Vec<String>,
+        found: String,
+    },
+
+    #[error("Parse error: {message}")]
+    CustomParseError { message: String },
+
+    #[error("Unknown error")]
+    UnknownError,
 
     #[error(
         "Internal compiler error: Wrong number of arguments, expected {expected}, got {got}"
@@ -61,4 +72,23 @@ pub enum Error {
         got_arg: TypeInfo,
         got_ret: TypeInfo,
     },
+}
+
+impl<'a> From<Rich<'a, char>> for Error {
+    fn from(value: Rich<'a, char>) -> Self {
+        match value.into_reason() {
+            RichReason::Custom(message) => Error::CustomParseError { message },
+            RichReason::ExpectedFound { expected, found } => {
+                Error::ParseError {
+                    expected: expected
+                        .into_iter()
+                        .map(|c| c.to_string())
+                        .collect::<Vec<_>>(),
+                    found: found
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| "End of input".to_string()),
+                }
+            }
+        }
+    }
 }

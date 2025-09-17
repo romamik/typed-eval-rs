@@ -4,7 +4,8 @@ What's left until "finished":
 - [x] Replace String errors with custom enum 
 - [ ] Positional information in Errors
   - [x] Add positional information to Expr
-    - [ ] Test positional information in Expr
+    - [x] Test positional information in Expr
+  - [ ] Make ParserError part of Expr
   - [ ] Add positional information to Errors
   - [ ] Support multiple Errors at once
   - [ ] Parser recovery (multiple errors from Parser)

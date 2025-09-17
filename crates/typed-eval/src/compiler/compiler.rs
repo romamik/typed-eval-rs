@@ -1,6 +1,6 @@
 use crate::{
-    BoxedFn, CompilerRegistry, DynFn, Error, EvalType, Expr, MethodCallData,
-    Result, TypeInfo, parse_expr,
+    BoxedFn, CombineResults, CompilerRegistry, DynFn, Error, Errors, EvalType,
+    Expr, MethodCallData, Result, TypeInfo, all_ok_vec, parse_expr,
 };
 use std::marker::PhantomData;
 
@@ -37,17 +37,29 @@ impl<Ctx: EvalType> Compiler<Ctx> {
     }
 
     pub fn compile_dyn(&self, input: &str) -> Result<DynFn> {
-        let expr = parse_expr(input);
-        if expr.has_errors() || !expr.has_output() {
-            let errors = expr
-                .errors()
-                .map(|e| e.to_string())
-                .collect::<Vec<_>>()
-                .join(",");
-            Err(Error::ParseError(errors))?;
+        let (expr, mut errors) = parse_expr(input);
+
+        let Some(expr) = expr else {
+            return Err(errors);
+        };
+
+        let dyn_fn = match self.compile_expr(&expr) {
+            Ok(dyn_fn) => Some(dyn_fn),
+            Err(compile_errors) => {
+                errors.append(compile_errors);
+                None
+            }
+        };
+
+        if dyn_fn.is_none() && errors.is_empty() {
+            errors.append(Error::UnknownError);
         }
 
-        self.compile_expr(expr.output().unwrap())
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
+        Ok(dyn_fn.ok_or(Error::UnknownError)?)
     }
 
     fn compile_expr(&self, expr: &Expr) -> Result<DynFn> {
@@ -83,6 +95,12 @@ impl<Ctx: EvalType> Compiler<Ctx> {
             Expr::FuncCall(func, args) => {
                 self.compile_function_call(func, args)
             }
+
+            Expr::InvalidLiteral(err) => {
+                Err(Error::InvalidLiteral((**err).clone()))?
+            }
+
+            Expr::ParseError => Err(Errors::empty())?,
         }
     }
 
@@ -160,11 +178,13 @@ impl<Ctx: EvalType> Compiler<Ctx> {
         }
 
         // cast arguments to arg_types
-        let arguments = arguments
-            .into_iter()
-            .zip(arg_types.iter().copied())
-            .map(|(arg, ty)| self.cast(arg, ty))
-            .collect::<Result<Vec<_>>>()?;
+        let arguments = all_ok_vec(
+            arguments
+                .into_iter()
+                .zip(arg_types.iter().copied())
+                .map(|(arg, ty)| self.cast(arg, ty))
+                .collect::<Vec<_>>(),
+        )?;
 
         compile_fn(object, arguments)
     }
@@ -188,8 +208,8 @@ impl<Ctx: EvalType> Compiler<Ctx> {
         lhs: &Expr,
         rhs: &Expr,
     ) -> Result<DynFn> {
-        let lhs_fn = self.compile_expr(lhs)?;
-        let rhs_fn = self.compile_expr(rhs)?;
+        let (lhs_fn, rhs_fn) =
+            (self.compile_expr(lhs), self.compile_expr(rhs)).all_ok()?;
 
         let (lhs_fn, rhs_fn) = self.cast_same_type(lhs_fn, rhs_fn)?;
         let ty = lhs_fn.ret_type;

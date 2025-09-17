@@ -1,12 +1,22 @@
-use crate::{BinOp, Expr, Span, UnOp, WithSpan};
+use crate::{BinOp, Errors, Expr, Spanned, UnOp, WithSpan};
 use chumsky::{
     cache::{Cache, Cached},
     prelude::*,
 };
 use std::cell::LazyCell;
 
-pub fn parse_expr(input: &str) -> ParseResult<Expr, Rich<'_, char>> {
-    PARSER.with(|parser| parser.get().parse(input))
+pub fn parse_expr(input: &str) -> (Option<Expr>, Errors) {
+    let (expr, errors) = PARSER
+        .with(|parser| parser.get().parse(input))
+        .into_output_errors();
+    (
+        expr,
+        errors
+            .into_iter()
+            .map(|e| e.into())
+            .collect::<Vec<_>>()
+            .into(),
+    )
 }
 
 thread_local! {
@@ -38,15 +48,15 @@ fn expr_parser<'src>()
                     .or_not(),
             )
             .to_slice()
-            .try_map(|s: &str, span: SimpleSpan| {
+            .map_with(|s: &str, e| {
                 if s.contains(['.', 'e']) {
                     s.parse()
-                        .map(|val: f64| Expr::Float(val.with_span(span)))
-                        .map_err(|e| Rich::custom(span, e.to_string()))
+                        .map(|val: f64| Expr::Float(val.with_span(e.span())))
+                        .unwrap_or_else(|err| Expr::InvalidLiteral(err.to_string().with_span(e.span())))
                 } else {
                     s.parse()
-                        .map(|val: i64| Expr::Int(val.with_span(span)))
-                        .map_err(|e| Rich::custom(span, e.to_string()))
+                        .map(|val: i64| Expr::Int(val.with_span(e.span())))
+                        .unwrap_or_else(|err| Expr::InvalidLiteral(err.to_string().with_span(e.span())))
                 }
             });
 
@@ -67,37 +77,54 @@ fn expr_parser<'src>()
             Expr::Var(s.to_owned().with_span(extra.span()))
         });
 
-        let parens = expr.clone().delimited_by(just('('), just(')'));
+        let parens = expr
+            .clone()
+            .delimited_by(just('('), just(')'))
+            .recover_with(via_parser(nested_delimiters(
+                '(',
+                ')',
+                [],
+                |_| Expr::ParseError,
+            )));
 
         let atom = choice((num, string, var, parens)).padded();
 
         enum Postfix {
-            Field(String, Span),
-            Call(Vec<Expr>, Span),
+            Field(Spanned<String>),
+            Call(Spanned<Vec<Expr>>),
         }
         let postfix = atom.foldl(
             choice((
                 //field access
                 just('.').ignore_then((text::ident::<&str, _>()).map_with(
                     |field: &str, e| {
-                        Postfix::Field(field.to_string(), e.span().into())
+                        Postfix::Field(field.to_string().with_span(e.span()))
                     },
                 )),
                 // function call
-                expr.separated_by(just(','))
+                expr.separated_by(
+                    just(',')
+                        .padded()
+                        .recover_with(skip_then_retry_until(any().ignored(),one_of(",)").ignored()))
+                    )
                     .collect::<Vec<Expr>>()
                     .delimited_by(just('('), just(')'))
                     .map_with(|args: Vec<Expr>, extra| {
-                        Postfix::Call(args, extra.span().into())
-                    }),
+                        Postfix::Call(args.with_span(extra.span()))
+                    }).recover_with(via_parser(nested_delimiters(
+                        '(',
+                        ')',
+                        [],
+                        |span: SimpleSpan| Postfix::Call(vec![Expr::ParseError].with_span(span)),
+                    )))
             ))
             .repeated(),
             |lhs, postfix| match postfix {
-                Postfix::Field(field, span) => {
-                    Expr::FieldAccess(Box::new(lhs), field.with_span(span))
+                Postfix::Field(field) => {
+                    Expr::FieldAccess(Box::new(lhs), field)
                 }
-                Postfix::Call(args, span) => {
-                    Expr::FuncCall(Box::new(lhs), args.with_span(span))
+                Postfix::Call(args) => {
+                    Expr::FuncCall(Box::new(lhs), args)
                 }
             },
         );
@@ -107,7 +134,7 @@ fn expr_parser<'src>()
             .map_with(|c, e| match c {
                 '+' => UnOp::Plus.with_span(e.span()),
                 '-' => UnOp::Neg.with_span( e.span()),
-                _ => panic!("unexpected symbol: one_of should not return anything unexpected"),
+                _ => unreachable!("unexpected symbol: one_of should not return anything unexpected"),
             })
             .repeated()
             .foldr(postfix, |op, rhs| {
@@ -120,7 +147,7 @@ fn expr_parser<'src>()
                 .map_with(|c, e| match c {
                     '*' => BinOp::Mul.with_span( e.span()),
                     '/' => BinOp::Div.with_span(e.span()),
-                    _ => panic!("unexpected symbol: one_of should not return anything unexpected"),
+                    _ => unreachable!("unexpected symbol: one_of should not return anything unexpected"),
                 })
                 .then(unary)
                 .repeated(),
@@ -136,7 +163,7 @@ fn expr_parser<'src>()
                 .map_with(|c,e| match c {
                     '+' => BinOp::Add.with_span(e.span()),
                     '-' => BinOp::Sub.with_span(e.span()),
-                    _ => panic!("unexpected symbol: one_of should not return anything unexpected"),
+                    _ => unreachable!("unexpected symbol: one_of should not return anything unexpected"),
                 })
                 .then(product)
                 .repeated(),
@@ -156,14 +183,14 @@ mod tests {
     use crate::expr::{BinOp, Expr, UnOp};
 
     fn parse_ok(input: &str) -> Expr {
-        let result = parse_expr(input);
-        if result.has_errors() {
-            for e in result.errors() {
+        let (expr, errors) = parse_expr(input);
+        if !errors.is_empty() {
+            for e in &*errors {
                 eprintln!("Parse error: {e:?}");
             }
             panic!("Failed to parse input: {}", input);
         }
-        result.into_output().unwrap()
+        expr.unwrap()
     }
 
     #[test]
@@ -385,9 +412,7 @@ mod tests {
     #[test]
     fn test_spans_match_input_substrings() {
         let input = r#"   foo.bar(1 + -2, "hi\t")   "#;
-        let expr = parse_expr(input);
-        dbg!(&expr);
-        let expr = expr.into_output().unwrap();
+        let expr = parse_ok(input);
 
         // Recursively walk the expression tree and assert that
         // expr.span() corresponds to the substring of `input`.
@@ -427,6 +452,7 @@ mod tests {
                         check(arg, input);
                     }
                 }
+                Expr::InvalidLiteral(_) | Expr::ParseError => {}
             }
         }
 
@@ -434,5 +460,56 @@ mod tests {
 
         // And the outermost span should cover the entire input
         assert_eq!(&input[expr.span().start..expr.span().end], input.trim());
+    }
+
+    #[test]
+    fn test_recover_invalid_parens() {
+        let (expr, errors) = parse_expr("2 * (1 + )");
+
+        assert_eq!(
+            expr,
+            Some(Expr::BinOp(
+                BinOp::Mul.test_span(),
+                Box::new(Expr::Int(2.test_span())),
+                Box::new(Expr::ParseError)
+            ))
+        );
+
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_recover_invalid_function_call() {
+        let (expr, errors) = parse_expr("func(1, 2 garbage, 3)");
+
+        assert_eq!(
+            expr,
+            Some(Expr::FuncCall(
+                Box::new(Expr::Var("func".to_string().test_span())),
+                vec![
+                    Expr::Int(1.test_span()),
+                    Expr::Int(2.test_span()),
+                    Expr::Int(3.test_span()),
+                ]
+                .test_span()
+            ))
+        );
+
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_recover_invalid_function_call_2() {
+        let (expr, errors) = parse_expr("func(1, , 3)");
+
+        assert_eq!(
+            expr,
+            Some(Expr::FuncCall(
+                Box::new(Expr::Var("func".to_string().test_span())),
+                vec![Expr::ParseError].test_span()
+            ))
+        );
+
+        assert!(!errors.is_empty());
     }
 }

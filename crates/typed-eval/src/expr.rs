@@ -10,6 +10,8 @@ pub enum Expr {
     BinOp(Spanned<BinOp>, Box<Expr>, Box<Expr>),
     FieldAccess(Box<Expr>, Spanned<String>),
     FuncCall(Box<Expr>, Spanned<Vec<Expr>>),
+    InvalidLiteral(Spanned<String>),
+    ParseError,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -39,6 +41,8 @@ impl Expr {
             }
             Expr::FieldAccess(obj, field) => obj.span().join(field.span()),
             Expr::FuncCall(func, args) => func.span().join(args.span()),
+            Expr::InvalidLiteral(err) => err.span(),
+            Expr::ParseError => Span::test_span(),
         }
     }
 }

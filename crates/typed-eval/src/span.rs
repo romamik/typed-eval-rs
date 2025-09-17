@@ -3,11 +3,20 @@ use std::ops::Deref;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Span {
+    // inclusive
     pub start: usize,
+    // exclusive
     pub end: usize,
 }
 
 impl Span {
+    pub fn whole_str(s: &str) -> Self {
+        Self {
+            start: 0,
+            end: s.len(),
+        }
+    }
+
     pub fn join(self, other: Self) -> Self {
         Self {
             start: self.start.min(other.start),
