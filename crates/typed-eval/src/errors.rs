@@ -50,31 +50,37 @@ impl Errors {
     }
 }
 
-pub fn all_ok_vec<T>(results: Vec<Result<T>>) -> Result<Vec<T>> {
-    let mut values = Vec::with_capacity(results.len());
-    let mut errors: Option<Errors> = None;
-
-    for res in results {
-        match res {
-            Ok(v) => values.push(v),
-            Err(e) => {
-                errors = Errors::combine(errors, Some(e));
-            }
-        }
-    }
-
-    if let Some(e) = errors {
-        Err(e)
-    } else {
-        Ok(values)
-    }
-}
-
-/// This trait is implemented for tuples, so it is possible to check multiple results
-/// and collect all errors before bailing out: `let (a, b) = (compute_a(), compute_b()).all_ok()?`
+/// This trait is implemented for tuples and vectors, so it is possible to check multiple results,
+/// and collect all errors before bailing out.
+/// This will return errors from both compute_a and compute_b, if any:
+/// `let (a, b) = (compute_a(), compute_b()).all_ok()?`
 pub trait CombineResults {
     type Output;
     fn all_ok(self) -> Result<Self::Output>;
+}
+
+impl<T> CombineResults for Vec<Result<T>> {
+    type Output = Vec<T>;
+
+    fn all_ok(self) -> Result<Self::Output> {
+        let mut values = Vec::with_capacity(self.len());
+        let mut errors: Option<Errors> = None;
+
+        for res in self {
+            match res {
+                Ok(v) => values.push(v),
+                Err(e) => {
+                    errors = Errors::combine(errors, e);
+                }
+            }
+        }
+
+        if let Some(e) = errors {
+            Err(e)
+        } else {
+            Ok(values)
+        }
+    }
 }
 
 macro_rules! impl_combine_results {
@@ -92,7 +98,7 @@ macro_rules! impl_combine_results {
                     let $name = match $name {
                         Ok(v) => Some(v),
                         Err(e) => {
-                            errors = Errors::combine(errors, Some(e));
+                            errors = Errors::combine(errors, e);
                             None
                         }
                     };

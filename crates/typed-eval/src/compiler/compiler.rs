@@ -1,6 +1,6 @@
 use crate::{
     BoxedFn, CombineResults, CompilerRegistry, DynFn, Error, Errors, EvalType,
-    Expr, MethodCallData, Result, TypeInfo, all_ok_vec, parse_expr,
+    Expr, MethodCallData, Result, TypeInfo, parse_expr,
 };
 use std::marker::PhantomData;
 
@@ -178,13 +178,12 @@ impl<Ctx: EvalType> Compiler<Ctx> {
         }
 
         // cast arguments to arg_types
-        let arguments = all_ok_vec(
-            arguments
-                .into_iter()
-                .zip(arg_types.iter().copied())
-                .map(|(arg, ty)| self.cast(arg, ty))
-                .collect::<Vec<_>>(),
-        )?;
+        let arguments = arguments
+            .into_iter()
+            .zip(arg_types.iter().copied())
+            .map(|(arg, ty)| self.cast(arg, ty))
+            .collect::<Vec<_>>()
+            .all_ok()?;
 
         compile_fn(object, arguments)
     }
