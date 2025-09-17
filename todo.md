@@ -5,10 +5,10 @@ What's left until "finished":
 - [ ] Positional information in Errors
   - [x] Add positional information to Expr
     - [x] Test positional information in Expr
-  - [ ] Make ParserError part of Expr
   - [ ] Add positional information to Errors
-  - [ ] Support multiple Errors at once
-  - [ ] Parser recovery (multiple errors from Parser)
+  - [x] Support multiple Errors at once
+  - [x] Parser recovery (multiple errors from Parser)
+  - [ ] Integrate Ariadne
 - [ ] Some sort of documentation
 - [ ] Array access
 - [ ] Options
