@@ -3,6 +3,7 @@
 mod common;
 
 use common::*;
+use std::borrow::Cow;
 use typed_eval::{Error, EvalType, eval_type_methods};
 
 #[test]
@@ -239,5 +240,25 @@ fn test_mixed_string_with_casts() {
     assert_eq!(
         eval::<_, String>("\"Pi is approximately \" + pi", &ctx),
         Ok("Pi is approximately 3.14".into())
+    );
+}
+
+#[test]
+fn test_method_return_cow() {
+    #[derive(EvalType)]
+    struct Ctx {
+        str: String,
+    }
+
+    #[eval_type_methods]
+    impl Ctx {
+        fn return_cow(&self) -> Cow<str> {
+            self.str.as_str().into()
+        }
+    }
+
+    assert_eq!(
+        eval::<_, String>("return_cow()", &Ctx { str: "Hi!".into() }).unwrap(),
+        "Hi!"
     );
 }
