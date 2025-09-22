@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "nightly", feature(min_specialization))]
+
 use std::borrow::Cow;
 use typed_eval::{Compiler, EvalType, eval_type_methods};
 
