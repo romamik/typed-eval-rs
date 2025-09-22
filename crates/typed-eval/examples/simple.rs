@@ -9,7 +9,7 @@ struct User {
 
 #[eval_type_methods]
 impl User {
-    fn greet<'a>(&'a self) -> Cow<'a, str> {
+    fn greet(&self) -> Cow<'_, str> {
         format!("Hello, {}", self.name).into()
     }
 }

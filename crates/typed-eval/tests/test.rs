@@ -252,7 +252,7 @@ fn test_method_return_cow() {
 
     #[eval_type_methods]
     impl Ctx {
-        fn return_cow(&self) -> Cow<str> {
+        fn return_cow(&self) -> Cow<'_, str> {
             self.str.as_str().into()
         }
     }

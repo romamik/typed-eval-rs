@@ -13,24 +13,32 @@ It lets you compile and execute dynamic expressions against a strongly typed con
 ## Quick example
 
 ```rust
-use typed_eval::{Compiler, SupportedType};
+use std::borrow::Cow;
+use typed_eval::{Compiler, EvalType, eval_type_methods};
 
-#[derive(SupportedType)]
+#[derive(EvalType)]
 struct User {
     name: String,
     age: i64,
 }
 
-#[derive(SupportedType)]
+#[eval_type_methods]
+impl User {
+    fn greet(&self) -> Cow<'_, str> {
+        format!("Hello, {}", self.name).into()
+    }
+}
+
+#[derive(EvalType)]
+#[typed_eval(no_methods)]
 struct Context {
     user: User,
-    greet: Box<dyn Fn(String) -> String>,
 }
 
 fn main() {
-    let compiler = Compiler::new();
+    let compiler = Compiler::new().unwrap();
 
-    let greet_user = compiler.compile::<String>("greet(user.name)").unwrap();
+    let greet_user = compiler.compile::<String>("user.greet()").unwrap();
     let double_age = compiler.compile::<i64>("user.age * 2").unwrap();
 
     let context = Context {
@@ -38,11 +46,10 @@ fn main() {
             name: "Bob".into(),
             age: 45,
         },
-        greet: Box::new(|name| format!("Hello, {name}")),
     };
 
-    assert_eq!(greet_user.call(&context), "Hello, Bob");
-    assert_eq!(double_age.call(&context), 90);
+    assert_eq!(greet_user(&context), "Hello, Bob");
+    assert_eq!(double_age(&context), 90);
 }
 ```
 
