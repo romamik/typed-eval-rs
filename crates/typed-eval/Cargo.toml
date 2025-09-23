@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 readme.workspace = true
-
+description = "A type-safe expression evaluation engine."
 
 [lints.clippy]
 module_inception = "allow"
