@@ -73,6 +73,8 @@ For example, compiling the following expression: `"a + 10"`, generates three clo
 
 This means the compiled function executes directly on the context with minimal overhead: no AST walking, no bytecode, etc.
 
+There is an article, that walks through some of the design decisions behind type-eval: https://blog.romamik.com/blog/2025-09-23-building-typed-eval
+
 ## Status
 
 This is an **experimental** project. 
