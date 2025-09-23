@@ -1,5 +1,14 @@
 [workspace]
 resolver = "3"
-members = [
-    "crates/*",
-]
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/romamik/typed-eval-rs"
+homepage = "https://github.com/romamik/typed-eval-rs"
+readme = "README.md"
+
+[workspace.dependencies]
+typed-eval-macro = { version = "0.1.0", path= "crates/typed-eval-macro" }

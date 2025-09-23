@@ -1,7 +1,12 @@
 [package]
 name = "typed-eval"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
 
 [lints.clippy]
 module_inception = "allow"
@@ -10,7 +15,7 @@ module_inception = "allow"
 chumsky = { version = "0.10.1", features = ["unstable"] }
 rustversion = "1.0.22"
 thiserror = "2.0.16"
-typed-eval-macro = { path = "../typed-eval-macro"}
+typed-eval-macro.workspace = true 
 
 [features]
 nightly = []
